@@ -190,13 +190,38 @@ function MessageContent({ message }: { message: Message }) {
         </a>
       );
 
-    case "template":
+    case "template": {
+      const isVideoHeader = message.media_url && (message.media_url.endsWith(".mp4") || message.media_url.includes("video") || message.media_url.includes("/videos/"));
+      const isImageHeader = message.media_url && (message.media_url.endsWith(".jpg") || message.media_url.endsWith(".jpeg") || message.media_url.endsWith(".png") || message.media_url.includes("image"));
       return (
         <div>
-          <span className="mb-1 inline-flex items-center gap-1 rounded bg-primary/20 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+          <span className="mb-2 inline-flex items-center gap-1 rounded bg-primary/20 px-1.5 py-0.5 text-[10px] font-medium text-primary">
             <LayoutTemplate className="h-3 w-3" />
             Template
           </span>
+          {message.media_url && (
+            <div className="mb-2 mt-1">
+              {isVideoHeader ? (
+                <video
+                  src={message.media_url}
+                  controls
+                  className="max-h-64 max-w-60 rounded-lg"
+                />
+              ) : isImageHeader ? (
+                <MediaImage url={message.media_url} alt="Template header image" />
+              ) : (
+                <a
+                  href={message.media_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 rounded-lg bg-muted/50 px-3 py-2 text-sm hover:bg-muted"
+                >
+                  <FileText className="h-5 w-5 shrink-0 text-muted-foreground" />
+                  <span className="truncate">Header Attachment</span>
+                </a>
+              )}
+            </div>
+          )}
           {message.content_text && (
             <p className="mt-1 whitespace-pre-wrap break-words text-sm">
               {message.content_text}
@@ -204,6 +229,7 @@ function MessageContent({ message }: { message: Message }) {
           )}
         </div>
       );
+    }
 
     case "location":
       return (
