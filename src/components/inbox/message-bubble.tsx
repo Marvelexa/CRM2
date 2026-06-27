@@ -148,6 +148,8 @@ function MessageContent({ message }: { message: Message }) {
             <video
               src={message.media_url}
               controls
+              preload="auto"
+              playsInline
               className="max-h-64 max-w-60 rounded-lg"
             />
           ) : (
@@ -205,6 +207,8 @@ function MessageContent({ message }: { message: Message }) {
                 <video
                   src={message.media_url}
                   controls
+                  preload="auto"
+                  playsInline
                   className="max-h-64 max-w-60 rounded-lg"
                 />
               ) : isImageHeader ? (
