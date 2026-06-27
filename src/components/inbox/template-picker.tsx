@@ -22,10 +22,12 @@ import {
   Loader2,
 } from "lucide-react";
 import { extractVariableIndices, extractVariableNames } from "@/lib/whatsapp/template-validators";
+import { toast } from "sonner";
 
 export interface TemplateSendValues {
   body: string[];
   headerText?: string;
+  headerMediaUrl?: string;
   buttonParams?: Record<number, string>;
 }
 
@@ -84,6 +86,8 @@ export function TemplatePicker({
   const [selected, setSelected] = useState<MessageTemplate | null>(null);
   const [params, setParams] = useState<string[]>([]);
   const [headerText, setHeaderText] = useState<string>("");
+  const [headerMediaUrl, setHeaderMediaUrl] = useState<string>("");
+  const [uploading, setUploading] = useState<boolean>(false);
   const [buttonParams, setButtonParams] = useState<Record<number, string>>({});
 
   useEffect(() => {
@@ -131,6 +135,7 @@ export function TemplatePicker({
     setSelected(null);
     setParams([]);
     setHeaderText("");
+    setHeaderMediaUrl("");
     setButtonParams({});
   }
 
@@ -141,10 +146,15 @@ export function TemplatePicker({
 
   function pickTemplate(template: MessageTemplate) {
     const slots = collectVariableSlots(template);
+    const hasMediaHeader =
+      template.header_type === "video" ||
+      template.header_type === "image" ||
+      template.header_type === "document";
     const noInputsNeeded =
       slots.bodyVars.length === 0 &&
       slots.headerVarCount === 0 &&
-      slots.urlButtonSlots.length === 0;
+      slots.urlButtonSlots.length === 0 &&
+      !hasMediaHeader;
     if (noInputsNeeded) {
       onSelect(template, { body: [] });
       handleOpenChange(false);
@@ -153,6 +163,7 @@ export function TemplatePicker({
     setSelected(template);
     setParams(new Array(slots.bodyVars.length).fill(""));
     setHeaderText("");
+    setHeaderMediaUrl("");
     setButtonParams({});
   }
 
@@ -160,6 +171,7 @@ export function TemplatePicker({
     if (!selected) return;
     const values: TemplateSendValues = { body: params };
     if (headerText.trim()) values.headerText = headerText.trim();
+    if (headerMediaUrl.trim()) values.headerMediaUrl = headerMediaUrl.trim();
     if (Object.keys(buttonParams).length > 0) {
       values.buttonParams = Object.fromEntries(
         Object.entries(buttonParams).map(([k, v]) => [Number(k), v.trim()]),
@@ -257,6 +269,63 @@ export function TemplatePicker({
                 </p>
               )}
             </div>
+            {selected && (selected.header_type === "video" || selected.header_type === "image" || selected.header_type === "document") && (
+              <div className="space-y-2 border-b border-border pb-3">
+                <Label className="text-xs text-popover-foreground uppercase tracking-wide">
+                  {`${selected.header_type} Header Attachment`}
+                </Label>
+                <div className="flex gap-2">
+                  <Input
+                    type="text"
+                    value={headerMediaUrl}
+                    onChange={(e) => setHeaderMediaUrl(e.target.value)}
+                    placeholder={`Paste a public ${selected.header_type} URL...`}
+                    className="border-border bg-muted text-foreground placeholder:text-muted-foreground flex-1"
+                  />
+                  <div className="relative">
+                    <input
+                      type="file"
+                      id="template-media-upload"
+                      className="hidden"
+                      accept={selected.header_type === "video" ? "video/*" : selected.header_type === "image" ? "image/*" : "*/*"}
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        try {
+                          setUploading(true);
+                          const { uploadAccountMedia } = await import("@/lib/storage/upload-media");
+                          const res = await uploadAccountMedia("chat-media", file);
+                          setHeaderMediaUrl(res.publicUrl);
+                          toast.success(`${selected.header_type} uploaded successfully!`);
+                        } catch (err) {
+                          console.error("Template media upload failed:", err);
+                          toast.error(err instanceof Error ? err.message : "Upload failed.");
+                        } finally {
+                          setUploading(false);
+                        }
+                      }}
+                      disabled={uploading}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={uploading}
+                      className="border-border text-popover-foreground hover:bg-muted"
+                      onClick={() => document.getElementById("template-media-upload")?.click()}
+                    >
+                      {uploading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        "Upload File"
+                      )}
+                    </Button>
+                  </div>
+                </div>
+                <p className="text-[10px] text-muted-foreground">
+                  Upload a file (max 16MB) or paste a public URL. If left empty, the template's default media or your conversation history fallback will be used.
+                </p>
+              </div>
+            )}
             {slots && slots.headerVarCount > 0 && (
               <div className="space-y-1">
                 <Label className="text-xs text-popover-foreground">
