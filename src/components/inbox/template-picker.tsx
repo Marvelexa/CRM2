@@ -287,10 +287,14 @@ export function TemplatePicker({
                       type="file"
                       id="template-media-upload"
                       className="hidden"
-                      accept={selected.header_type === "video" ? "video/*" : selected.header_type === "image" ? "image/*" : "*/*"}
+                      accept={selected.header_type === "video" ? "video/mp4" : selected.header_type === "image" ? "image/jpeg,image/png" : "*/*"}
                       onChange={async (e) => {
                         const file = e.target.files?.[0];
                         if (!file) return;
+                        if (selected.header_type === "video" && !file.name.toLowerCase().endsWith(".mp4")) {
+                          toast.error("Meta strictly only supports MP4 format for video headers. Please select an MP4 file.");
+                          return;
+                        }
                         try {
                           setUploading(true);
                           const { uploadAccountMedia } = await import("@/lib/storage/upload-media");
