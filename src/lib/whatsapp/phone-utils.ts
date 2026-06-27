@@ -5,16 +5,39 @@
  */
 export function sanitizePhoneForMeta(phone: string): string {
   if (!phone) return ''
-  return phone.replace(/\D/g, '')
+  let cleaned = phone.replace(/\D/g, '')
+  // If it starts with '0' followed by 10 digits, change to 91
+  if (cleaned.startsWith('0') && cleaned.length === 11) {
+    cleaned = '91' + cleaned.substring(1)
+  }
+  // If it is 10 digits (no country code), prepend '91'
+  else if (cleaned.length === 10) {
+    cleaned = '91' + cleaned
+  }
+  // If it starts with '910' and is 13 digits (e.g. +91 09876543210), strip the trunk '0'
+  else if (cleaned.startsWith('910') && cleaned.length === 13) {
+    cleaned = '91' + cleaned.substring(3)
+  }
+  return cleaned
 }
 
 /**
- * Normalize phone number by removing all non-digit characters.
+ * Normalize phone number by removing all non-digit characters and standardizing.
  * Used for comparing phone numbers in different formats.
  */
 export function normalizePhone(phone: string): string {
   if (!phone) return ''
-  return phone.replace(/\D/g, '')
+  let cleaned = phone.replace(/\D/g, '')
+  if (cleaned.startsWith('0') && cleaned.length === 11) {
+    cleaned = '91' + cleaned.substring(1)
+  }
+  else if (cleaned.length === 10) {
+    cleaned = '91' + cleaned
+  }
+  else if (cleaned.startsWith('910') && cleaned.length === 13) {
+    cleaned = '91' + cleaned.substring(3)
+  }
+  return cleaned
 }
 
 /**

@@ -3,29 +3,31 @@
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
-import { cn } from "@/lib/utils";
 import type { Contact, Deal, ContactNote, Tag } from "@/types";
 import {
   Phone,
   Mail,
   Copy,
   Check,
-  User,
   Tag as TagIcon,
   DollarSign,
   StickyNote,
   Plus,
+  Pencil,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { format } from "date-fns";
+import { ContactForm } from "../contacts/contact-form";
 
 interface ContactSidebarProps {
   contact: Contact | null;
+  onContactUpdated?: (updatedContact: Contact) => void;
 }
 
-export function ContactSidebar({ contact }: ContactSidebarProps) {
+export function ContactSidebar({ contact, onContactUpdated }: ContactSidebarProps) {
   const { accountId } = useAuth();
+  const [isEditing, setIsEditing] = useState(false);
   const [copied, setCopied] = useState(false);
   const [deals, setDeals] = useState<Deal[]>([]);
   const [notes, setNotes] = useState<ContactNote[]>([]);
@@ -143,9 +145,19 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
                 initials
               )}
             </div>
-            <h3 className="mt-3 text-sm font-semibold text-foreground">
-              {displayName}
-            </h3>
+            <div className="mt-3 flex items-center justify-center gap-1.5">
+              <h3 className="text-sm font-semibold text-foreground">
+                {displayName}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsEditing(true)}
+                className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
+                title="Edit Contact"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+            </div>
             {contact.company && (
               <p className="text-xs text-muted-foreground">{contact.company}</p>
             )}
@@ -294,6 +306,24 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
           </div>
         </div>
       </ScrollArea>
+      {isEditing && (
+        <ContactForm
+          open={isEditing}
+          onOpenChange={setIsEditing}
+          contact={contact}
+          contactTags={tags.map((t) => ({
+            id: t.contact_tag_id,
+            contact_id: contact.id,
+            tag_id: t.id,
+          }))}
+          onSaved={(savedContact) => {
+            if (savedContact && onContactUpdated) {
+              onContactUpdated(savedContact);
+            }
+            fetchContactData();
+          }}
+        />
+      )}
     </div>
   );
 }

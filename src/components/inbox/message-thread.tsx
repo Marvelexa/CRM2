@@ -26,6 +26,8 @@ import {
   RefreshCw,
   PanelRightOpen,
   PanelRightClose,
+  Bot,
+  BotOff,
 } from "lucide-react";
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
 import { Badge } from "@/components/ui/badge";
@@ -48,6 +50,7 @@ import { deleteAccountMedia } from "@/lib/storage/upload-media";
 import { TemplatePicker } from "./template-picker";
 import { buildReplyPreview } from "./reply-quote";
 import { toast } from "sonner";
+import { extractVariableNames } from "@/lib/whatsapp/template-validators";
 
 interface ReplyDraft {
   id: string;
@@ -56,9 +59,11 @@ interface ReplyDraft {
 }
 
 function renderTemplateBody(body: string, params: string[]): string {
-  return body.replace(/\{\{(\d+)\}\}/g, (_, raw) => {
-    const idx = Number(raw) - 1;
-    return params[idx] ?? `{{${raw}}}`;
+  const varNames = extractVariableNames(body);
+  return body.replace(/\{\{([a-zA-Z0-9_-]+)\}\}/g, (_, name) => {
+    const idx = varNames.indexOf(name);
+    const value = params[idx];
+    return value !== undefined && value.trim().length > 0 ? value : `{{${name}}}`;
   });
 }
 
@@ -165,13 +170,147 @@ export function MessageThread({
   contactPanelOpen,
   onToggleContactPanel,
 }: MessageThreadProps) {
-  const { user } = useAuth();
+  const { user, accountId } = useAuth();
   const { getPresence, getRow, now } = usePresence();
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [reactions, setReactions] = useState<MessageReaction[]>([]);
+  const [isBotMuted, setIsBotMuted] = useState(false);
+  const [togglingBot, setTogglingBot] = useState(false);
+
+  // Sync isBotMuted state and subscribe to changes
+  useEffect(() => {
+    if (!contact) {
+      setIsBotMuted(false);
+      return;
+    }
+
+    const checkBotMute = async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("contact_tags")
+        .select("id, tags!inner(name)")
+        .eq("contact_id", contact.id)
+        .eq("tags.name", "Bot Muted");
+
+      if (error) {
+        console.error("Failed to check bot mute status:", error);
+        return;
+      }
+      setIsBotMuted(!!data && data.length > 0);
+    };
+
+    checkBotMute();
+
+    // Subscribe to realtime changes in contact_tags
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`contact_tags:${contact.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "contact_tags",
+          filter: `contact_id=eq.${contact.id}`,
+        },
+        () => {
+          checkBotMute();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [contact]);
+
+  const handleToggleBotMute = useCallback(async () => {
+    if (!contact || togglingBot) return;
+    setTogglingBot(true);
+
+    const supabase = createClient();
+
+    try {
+      if (isBotMuted) {
+        // Unmute: delete the "Bot Muted" tag association
+        const { data: tag, error: tagFetchErr } = await supabase
+          .from("tags")
+          .select("id")
+          .eq("account_id", accountId)
+          .eq("name", "Bot Muted")
+          .maybeSingle();
+
+        if (tagFetchErr) throw tagFetchErr;
+
+        if (tag) {
+          const { error: deleteErr } = await supabase
+            .from("contact_tags")
+            .delete()
+            .eq("contact_id", contact.id)
+            .eq("tag_id", tag.id);
+
+          if (deleteErr) throw deleteErr;
+        }
+
+        setIsBotMuted(false);
+        toast.success("AI Bot auto-reply is now ACTIVE");
+      } else {
+        // Mute: add the "Bot Muted" tag association
+        let { data: tag, error: tagFetchErr } = await supabase
+          .from("tags")
+          .select("id")
+          .eq("account_id", accountId)
+          .eq("name", "Bot Muted")
+          .maybeSingle();
+
+        if (tagFetchErr) throw tagFetchErr;
+
+        if (!tag) {
+          const { data: newTag, error: tagCreateErr } = await supabase
+            .from("tags")
+            .insert({
+              account_id: accountId,
+              user_id: user?.id,
+              name: "Bot Muted",
+              color: "#ef4444",
+            })
+            .select("id")
+            .single();
+
+          if (tagCreateErr) throw tagCreateErr;
+          tag = newTag;
+        }
+
+        if (tag) {
+          const { error: insertErr } = await supabase
+            .from("contact_tags")
+            .upsert(
+              {
+                contact_id: contact.id,
+                tag_id: tag.id,
+              },
+              { onConflict: "contact_id,tag_id" }
+            );
+
+          if (insertErr) throw insertErr;
+        }
+
+        setIsBotMuted(true);
+        toast.success("AI Bot auto-reply is now MUTED");
+      }
+
+      // Refresh to update sidebar tag list
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      console.error("Failed to toggle bot status:", err);
+      toast.error("Failed to update AI Bot status");
+    } finally {
+      setTogglingBot(false);
+    }
+  }, [contact, isBotMuted, togglingBot, accountId, user?.id, onRefresh]);
   // Purely visual spin state for the manual-refresh button. The actual
   // refetch is fire-and-forget through `onRefresh` (which bumps the
   // parent's resyncToken); the 700ms spin is just feedback so the click
@@ -834,8 +973,16 @@ export function MessageThread({
               <ArrowLeft className="h-5 w-5" />
             </button>
           )}
-          <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground">
-            {displayName.charAt(0).toUpperCase()}
+          <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground overflow-hidden">
+            {contact.avatar_url ? (
+              <img
+                src={contact.avatar_url}
+                alt={displayName}
+                className="h-9 w-9 rounded-full object-cover"
+              />
+            ) : (
+              displayName.charAt(0).toUpperCase()
+            )}
           </div>
           <div className="min-w-0">
             <h2 className="truncate text-sm font-semibold text-foreground">{displayName}</h2>
@@ -904,6 +1051,33 @@ export function MessageThread({
               />
             </button>
           )}
+
+          {/* AI Auto-Reply Toggle */}
+          <button
+            type="button"
+            onClick={handleToggleBotMute}
+            disabled={togglingBot}
+            aria-label={isBotMuted ? "Unmute AI Bot" : "Mute AI Bot"}
+            title={isBotMuted ? "AI Auto-Reply Muted (Click to Activate)" : "AI Auto-Reply Active (Click to Mute)"}
+            className={cn(
+              "inline-flex h-7 items-center justify-center gap-1.5 px-2.5 text-xs font-medium rounded-md transition-all duration-300 border disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer",
+              isBotMuted
+                ? "bg-muted/40 text-muted-foreground border-border hover:bg-red-950/20 hover:text-red-400 hover:border-red-500/30"
+                : "bg-emerald-950/20 text-emerald-400 border-emerald-500/30 hover:bg-emerald-950/40 hover:border-emerald-500/50 shadow-[0_0_8px_rgba(16,185,129,0.1)]"
+            )}
+          >
+            {isBotMuted ? (
+              <>
+                <BotOff className="h-3.5 w-3.5 text-red-400" />
+                <span className="hidden xs:inline text-[10px]">AI Muted</span>
+              </>
+            ) : (
+              <>
+                <Bot className="h-3.5 w-3.5 animate-pulse text-emerald-400" />
+                <span className="hidden xs:inline text-[10px]">AI Active</span>
+              </>
+            )}
+          </button>
 
           {/* Status dropdown */}
           <DropdownMenu>

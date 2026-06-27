@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
-import { getMediaUrl, downloadMedia } from '@/lib/whatsapp/meta-api'
+import { getMediaUrl, downloadMedia, sendTextMessage } from '@/lib/whatsapp/meta-api'
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
@@ -11,6 +11,8 @@ import {
   handleTemplateWebhookChange,
   isTemplateWebhookField,
 } from '@/lib/whatsapp/template-webhook'
+import { generateAIReply } from '@/lib/ai/reply-generator'
+
 
 // Lazy-initialized to avoid build-time crash when env vars are missing
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -275,7 +277,8 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
           // inserts that need it for NOT NULL FK compliance. Always
           // the admin who saved the WhatsApp config.
           config.user_id,
-          decryptedAccessToken
+          decryptedAccessToken,
+          config.phone_number_id
         )
       }
     }
@@ -498,6 +501,114 @@ async function handleReaction(
   }
 }
 
+async function isBotMutedForContact(supabase: any, contactId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('contact_tags')
+    .select('tags!inner(name)')
+    .eq('contact_id', contactId)
+    .eq('tags.name', 'Bot Muted')
+  if (error) {
+    console.error('[webhook] Error checking if bot is muted:', error)
+    return false
+  }
+  return !!data && data.length > 0
+}
+
+async function handleAIAutoReply(
+  conversation: any,
+  contact: any,
+  accessToken: string,
+  phoneNumberId: string
+) {
+  try {
+    // 1) Fetch last 10 messages for context
+    const { data: history, error: historyErr } = await supabaseAdmin()
+      .from('messages')
+      .select('sender_type, content_text, created_at, id, message_id')
+      .eq('conversation_id', conversation.id)
+      .order('created_at', { ascending: false })
+      .limit(10)
+
+    if (historyErr) {
+      console.error('[webhook] Failed to fetch conversation history for AI bot:', historyErr)
+      return
+    }
+
+    const sortedHistory = (history || []).reverse()
+    const messagesFormatted = sortedHistory
+      .map((m: any) => {
+        const role = m.sender_type === 'customer' ? 'Customer' : 'Agent'
+        return `${role}: ${m.content_text || `[${m.content_type || 'media'}]`}`
+      })
+      .join('\n')
+
+    // 2) Define system instruction (prompt)
+    const systemPrompt = `You are Nexvora's AI WhatsApp Assistant. Your goal is to reply to incoming customer messages on WhatsApp in an EXTREMELY polite, warm, humble, respectful, and customer-centric manner.
+- Always sound positive, eager to help, and highly respectful.
+- Use soft-spoken, welcoming language. For Hindi/Hinglish, always use respectful pronouns/verbs like "Aap", "Ji", "Dhanyawad", etc. For English, use "Please", "Thank you", "It would be our pleasure", etc.
+- Keep replies concise, clear, and suitable for WhatsApp (usually 1-3 sentences).
+- Match the customer's language (e.g., if they speak Hindi/Hinglish, reply in Hinglish/Hindi; if they speak English, reply in English).
+- Do not use markdown formatting (no bolding, italics, bullet points, etc. unless absolutely necessary and supported by WhatsApp).
+- Reply directly with the next response message from Nexvora. Do not prefix with "Agent:" or "Bot:" or write anything else.`
+
+    // 3) Call AI API
+    const replyText = await generateAIReply(messagesFormatted, systemPrompt)
+    if (!replyText) {
+      console.warn('[webhook] AI generated an empty response.')
+      return
+    }
+
+    console.log(`[webhook] AI Bot sending reply to ${contact.phone}: ${replyText}`)
+
+    // Find the last customer message's message_id to reply in context (swipe-reply)
+    const lastCustomerMsg = sortedHistory
+      .slice()
+      .reverse()
+      .find((m: any) => m.sender_type === 'customer')
+    const contextMessageId = lastCustomerMsg?.message_id
+
+    // 4) Send message via WhatsApp Meta API
+    const result = await sendTextMessage({
+      phoneNumberId,
+      accessToken,
+      to: contact.phone,
+      text: replyText,
+      contextMessageId,
+    })
+
+    // 5) Save response to DB under sender_type = 'bot'
+    const { error: insertErr } = await supabaseAdmin()
+      .from('messages')
+      .insert({
+        conversation_id: conversation.id,
+        sender_type: 'bot',
+        content_type: 'text',
+        content_text: replyText,
+        message_id: result.messageId,
+        status: 'sent',
+        reply_to_message_id: lastCustomerMsg?.id || null,
+      })
+
+    if (insertErr) {
+      console.error('[webhook] Failed to save bot message to DB:', insertErr)
+      return
+    }
+
+    // 6) Update conversation last_message_text
+    await supabaseAdmin()
+      .from('conversations')
+      .update({
+        last_message_text: replyText,
+        last_message_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', conversation.id)
+
+  } catch (err) {
+    console.error('[webhook] AI auto-reply failed:', err)
+  }
+}
+
 async function processMessage(
   message: WhatsAppMessage,
   contact: { profile: { name: string }; wa_id: string },
@@ -509,7 +620,8 @@ async function processMessage(
   // (contacts, conversations). Always the admin who saved the
   // WhatsApp config; the choice is arbitrary post-017 but stable.
   configOwnerUserId: string,
-  accessToken: string
+  accessToken: string,
+  phoneNumberId: string
 ) {
   const senderPhone = normalizePhone(message.from)
   const contactName = contact.profile.name
@@ -712,6 +824,21 @@ async function processMessage(
         conversation_id: conversation.id,
       },
     }).catch((err) => console.error('[automations] dispatch failed:', err))
+  }
+
+  // Trigger AI Auto-reply asynchronously if not consumed by a Flow
+  if (!flowConsumed) {
+    isBotMutedForContact(supabaseAdmin(), contactRecord.id).then((muted) => {
+      if (!muted) {
+        handleAIAutoReply(conversation, contactRecord, accessToken, phoneNumberId).catch((err) => {
+          console.error('[webhook] handleAIAutoReply failed:', err)
+        })
+      } else {
+        console.log(`[webhook] AI Bot is muted for contact ${contactRecord.phone}`)
+      }
+    }).catch((err) => {
+      console.error('[webhook] failed to check bot mute status:', err)
+    })
   }
 }
 

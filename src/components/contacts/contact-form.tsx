@@ -30,7 +30,7 @@ interface ContactFormProps {
   onOpenChange: (open: boolean) => void;
   contact?: Contact | null;
   contactTags?: ContactTag[];
-  onSaved: () => void;
+  onSaved: (savedContact?: Contact) => void;
   /** Open an existing contact's detail view — used by the duplicate
    *  notice to jump to the contact that already owns this number. */
   onViewExisting?: (contactId: string) => void;
@@ -52,6 +52,7 @@ export function ContactForm({
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [company, setCompany] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState('');
   const [saving, setSaving] = useState(false);
 
   // Duplicate-phone detection for NEW contacts. `exact` (same digits)
@@ -73,6 +74,7 @@ export function ContactForm({
       setPhone(contact?.phone ?? '');
       setEmail(contact?.email ?? '');
       setCompany(contact?.company ?? '');
+      setAvatarUrl(contact?.avatar_url ?? '');
       setSelectedTagIds(contactTags.map((ct) => ct.tag_id));
       setDupMatch(null);
       fetchTags();
@@ -122,9 +124,24 @@ export function ContactForm({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
-    if (!phone.trim()) {
+    const rawPhone = phone.trim();
+    if (!rawPhone) {
       toast.error('Phone number is required');
       return;
+    }
+
+    let cleaned = rawPhone.replace(/\D/g, '');
+    let formattedPhone = rawPhone;
+    if (cleaned.startsWith('0') && cleaned.length === 11) {
+      formattedPhone = '+91' + cleaned.substring(1);
+    } else if (cleaned.length === 10) {
+      formattedPhone = '+91' + cleaned;
+    } else if (cleaned.startsWith('910') && cleaned.length === 13) {
+      formattedPhone = '+91' + cleaned.substring(3);
+    } else if (cleaned.startsWith('91') && cleaned.length === 12) {
+      formattedPhone = '+' + cleaned;
+    } else if (!formattedPhone.startsWith('+') && cleaned) {
+      formattedPhone = '+' + cleaned;
     }
 
     // Hard-block an exact duplicate on create (the DB unique index is
@@ -145,19 +162,24 @@ export function ContactForm({
       if (!accountId) throw new Error('Your profile is not linked to an account.');
 
       let contactId = contact?.id;
+      let savedContact: Contact | undefined;
 
       if (isEdit && contactId) {
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from('contacts')
           .update({
             name: name.trim() || null,
-            phone: phone.trim(),
+            phone: formattedPhone,
             email: email.trim() || null,
             company: company.trim() || null,
+            avatar_url: avatarUrl.trim() || null,
             updated_at: new Date().toISOString(),
           })
-          .eq('id', contactId);
+          .eq('id', contactId)
+          .select()
+          .single();
         if (error) throw error;
+        savedContact = data;
       } else {
         const { data, error } = await supabase
           .from('contacts')
@@ -165,14 +187,16 @@ export function ContactForm({
             user_id: user.id,
             account_id: accountId,
             name: name.trim() || null,
-            phone: phone.trim(),
+            phone: formattedPhone,
             email: email.trim() || null,
             company: company.trim() || null,
+            avatar_url: avatarUrl.trim() || null,
           })
-          .select('id')
+          .select()
           .single();
         if (error) throw error;
         contactId = data.id;
+        savedContact = data;
       }
 
       // Sync tags
@@ -196,7 +220,7 @@ export function ContactForm({
 
       toast.success(isEdit ? 'Contact updated' : 'Contact created');
       onOpenChange(false);
-      onSaved();
+      onSaved(savedContact);
     } catch (err: unknown) {
       // The unique index (migration 022) rejects a duplicate phone that
       // slipped past the on-blur check (race, or a format that
@@ -320,6 +344,19 @@ export function ContactForm({
               value={company}
               onChange={(e) => setCompany(e.target.value)}
               placeholder="Acme Inc."
+              className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="cf-avatar-url" className="text-muted-foreground">
+              Profile Photo URL
+            </Label>
+            <Input
+              id="cf-avatar-url"
+              value={avatarUrl}
+              onChange={(e) => setAvatarUrl(e.target.value)}
+              placeholder="https://example.com/avatar.jpg"
               className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
             />
           </div>

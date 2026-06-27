@@ -191,15 +191,104 @@ export async function POST(request: Request) {
       }
     }
 
+    // Check if the 24-hour customer service window is open.
+    // If not open (or no messages yet), and message_type is 'text' or 'video',
+    // we automatically fallback to sending our approved 'website_outreach_video' template.
+    let isWindowOpen = false;
+    if (conversation) {
+      const { data: lastCustomerMsg } = await ctx.supabase
+        .from('messages')
+        .select('created_at')
+        .eq('conversation_id', conversation.id)
+        .eq('sender_type', 'customer')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (lastCustomerMsg) {
+        const hoursSince = (Date.now() - new Date(lastCustomerMsg.created_at).getTime()) / (1000 * 60 * 60);
+        if (hoursSince < 24) {
+          isWindowOpen = true;
+        }
+      }
+    }
+
+    let finalMessageType = message_type;
+    let finalTemplateName = template_name;
+    let finalTemplateLanguage = template_language;
+    let finalTemplateMessageParams = template_message_params;
+    let finalTemplateParams = template_params;
+    let finalContentText = content_text;
+
+    if (!isWindowOpen && (message_type === 'text' || message_type === 'video')) {
+      // Find the approved 'website_outreach_soft' or fallback to 'website_outreach' in the database
+      let templateData = null;
+      
+      // 1. Check for 'website_outreach_video'
+      const { data: videoTemplate } = await ctx.supabase
+        .from('message_templates')
+        .select('*')
+        .eq('account_id', ctx.accountId)
+        .eq('name', 'website_outreach_video')
+        .in('language', ['en', 'en_US'])
+        .maybeSingle();
+
+      if (videoTemplate && isMessageTemplate(videoTemplate) && videoTemplate.status === 'APPROVED') {
+        templateData = videoTemplate;
+      } else {
+        // 2. Check for 'website_outreach_soft'
+        const { data: softTemplate } = await ctx.supabase
+          .from('message_templates')
+          .select('*')
+          .eq('account_id', ctx.accountId)
+          .eq('name', 'website_outreach_soft')
+          .in('language', ['en', 'en_US'])
+          .maybeSingle();
+
+        if (softTemplate && isMessageTemplate(softTemplate) && softTemplate.status === 'APPROVED') {
+          templateData = softTemplate;
+        } else {
+          // 3. Fallback to 'website_outreach'
+          const { data: origTemplate } = await ctx.supabase
+            .from('message_templates')
+            .select('*')
+            .eq('account_id', ctx.accountId)
+            .eq('name', 'website_outreach')
+            .in('language', ['en', 'en_US'])
+            .maybeSingle();
+          if (origTemplate && isMessageTemplate(origTemplate)) {
+            templateData = origTemplate;
+          }
+        }
+      }
+
+      if (templateData) {
+        finalMessageType = 'template';
+        finalTemplateName = templateData.name;
+        finalTemplateLanguage = templateData.language || 'en_US';
+        
+        const isVideoHeader = templateData.header_type === 'video';
+        finalTemplateMessageParams = {
+          body: [contact.name || 'there'],
+          ...(isVideoHeader && media_url ? { headerMediaUrl: media_url } : {})
+        };
+        finalTemplateParams = [contact.name || 'there'];
+        finalContentText = templateData.body_text || `Hello! I made this sample website for ${contact.name || 'there'} — saw your awesome reviews.`;
+        console.log(`[API v1 Messages] Closed window detected. Falling back to template '${templateData.name}' (Video Header: ${isVideoHeader}) for phone ${sanitizedPhone}`);
+      }
+    }
+
+    const finalIsMediaKind = ['image', 'video', 'document', 'audio'].includes(finalMessageType);
+
     // Preload template row
     let templateRow: MessageTemplate | null = null;
-    if (message_type === 'template' && template_name) {
+    if (finalMessageType === 'template' && finalTemplateName) {
       const { data } = await ctx.supabase
         .from('message_templates')
         .select('*')
         .eq('account_id', ctx.accountId)
-        .eq('name', template_name)
-        .eq('language', template_language || 'en_US')
+        .eq('name', finalTemplateName)
+        .eq('language', finalTemplateLanguage || 'en_US')
         .maybeSingle();
 
       if (data && !isMessageTemplate(data)) {
@@ -215,28 +304,28 @@ export async function POST(request: Request) {
     let workingPhone = sanitizedPhone;
 
     const attempt = async (phoneToTry: string): Promise<string> => {
-      if (message_type === 'template') {
+      if (finalMessageType === 'template') {
         const result = await sendTemplateMessage({
           phoneNumberId: config.phone_number_id,
           accessToken,
           to: phoneToTry,
-          templateName: template_name,
-          language: template_language || 'en_US',
+          templateName: finalTemplateName!,
+          language: finalTemplateLanguage || 'en_US',
           template: templateRow ?? undefined,
-          messageParams: template_message_params ?? undefined,
-          params: template_params || [],
+          messageParams: finalTemplateMessageParams ?? undefined,
+          params: finalTemplateParams || [],
           contextMessageId,
         });
         return result.messageId;
       }
-      if (isMediaKind) {
+      if (finalIsMediaKind) {
         const result = await sendMediaMessage({
           phoneNumberId: config.phone_number_id,
           accessToken,
           to: phoneToTry,
-          kind: message_type as MediaKind,
-          link: media_url,
-          caption: content_text || undefined,
+          kind: finalMessageType as MediaKind,
+          link: media_url!,
+          caption: finalContentText || undefined,
           filename: filename || undefined,
           contextMessageId,
         });
@@ -246,7 +335,7 @@ export async function POST(request: Request) {
         phoneNumberId: config.phone_number_id,
         accessToken,
         to: phoneToTry,
-        text: content_text,
+        text: finalContentText!,
         contextMessageId,
       });
       return result.messageId;
@@ -295,10 +384,10 @@ export async function POST(request: Request) {
       .insert({
         conversation_id: conversation.id,
         sender_type: 'agent',
-        content_type: message_type,
-        content_text: content_text || null,
+        content_type: finalMessageType,
+        content_text: finalContentText || null,
         media_url: media_url || null,
-        template_name: template_name || null,
+        template_name: finalTemplateName || null,
         message_id: waMessageId,
         status: 'sent',
         reply_to_message_id: reply_to_message_id || null,
@@ -318,7 +407,7 @@ export async function POST(request: Request) {
     await ctx.supabase
       .from('conversations')
       .update({
-        last_message_text: content_text || `[${message_type}]`,
+        last_message_text: finalContentText || `[${finalMessageType}]`,
         last_message_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })

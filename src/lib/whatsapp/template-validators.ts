@@ -72,6 +72,28 @@ export function extractVariableIndices(text: string): number[] {
 }
 
 /**
+ * Extract sorted, deduplicated variable names from a string.
+ * E.g., returns ["1", "2"] for "Hi {{1}} and {{2}}" and
+ * ["company_name"] for "Hello {{company_name}}".
+ */
+export function extractVariableNames(text: string): string[] {
+  const matches = text.matchAll(/\{\{([a-zA-Z0-9_-]+)\}\}/g);
+  const set = new Set<string>();
+  for (const m of matches) {
+    set.add(m[1]);
+  }
+  return [...set].sort((a, b) => {
+    const na = Number(a);
+    const nb = Number(b);
+    if (Number.isFinite(na) && Number.isFinite(nb)) {
+      return na - nb;
+    }
+    return a.localeCompare(b);
+  });
+}
+
+
+/**
  * Meta requires contiguous, 1-indexed variables. `{{1}} {{3}}` is
  * invalid — it must be `{{1}} {{2}}`.
  */

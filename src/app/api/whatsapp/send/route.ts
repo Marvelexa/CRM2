@@ -251,14 +251,28 @@ export async function POST(request: Request) {
     // guards against a malformed row (e.g. from a partial sync)
     // crashing the send-builder later in the stack.
     let templateRow: MessageTemplate | null = null
+    let finalMessageParams = template_message_params
+    
     if (message_type === 'template' && template_name) {
-      const { data } = await supabase
+      let { data } = await supabase
         .from('message_templates')
         .select('*')
         .eq('account_id', accountId)
         .eq('name', template_name)
         .eq('language', template_language || 'en_US')
         .maybeSingle()
+        
+      if (!data && !template_language) {
+        const { data: enData } = await supabase
+          .from('message_templates')
+          .select('*')
+          .eq('account_id', accountId)
+          .eq('name', template_name)
+          .eq('language', 'en')
+          .maybeSingle()
+        data = enData
+      }
+
       if (data && !isMessageTemplate(data)) {
         return NextResponse.json(
           {
@@ -269,6 +283,27 @@ export async function POST(request: Request) {
         )
       }
       templateRow = data ?? null
+
+      // Resolve missing headerMediaUrl from the conversation's media messages history
+      if (templateRow && templateRow.header_type === 'video' && (!finalMessageParams || !finalMessageParams.headerMediaUrl)) {
+        console.log(`[whatsapp/send] Video template '${template_name}' requested without headerMediaUrl. Querying conversation messages...`);
+        const { data: recentMediaMsg } = await supabase
+          .from('messages')
+          .select('media_url')
+          .eq('conversation_id', conversation_id)
+          .not('media_url', 'is', null)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (recentMediaMsg && recentMediaMsg.media_url) {
+          console.log(`[whatsapp/send] Resolved media_url fallback from messages: ${recentMediaMsg.media_url}`);
+          finalMessageParams = {
+            ...(finalMessageParams || {}),
+            headerMediaUrl: recentMediaMsg.media_url,
+          };
+        }
+      }
     }
 
     const attempt = async (phone: string): Promise<string> => {
@@ -278,9 +313,9 @@ export async function POST(request: Request) {
           accessToken,
           to: phone,
           templateName: template_name,
-          language: template_language || 'en_US',
+          language: templateRow?.language || template_language || 'en_US',
           template: templateRow ?? undefined,
-          messageParams: template_message_params ?? undefined,
+          messageParams: finalMessageParams ?? undefined,
           // Legacy body-only fallback — only consulted when
           // messageParams.body isn't set.
           params: template_params || [],
@@ -397,6 +432,57 @@ export async function POST(request: Request) {
         updated_at: new Date().toISOString(),
       })
       .eq('id', conversation_id)
+
+    // Automatically mute the AI Bot when human agent sends a message
+    try {
+      let { data: tag, error: tagFetchErr } = await supabase
+        .from('tags')
+        .select('id')
+        .eq('account_id', accountId)
+        .eq('name', 'Bot Muted')
+        .maybeSingle()
+
+      if (tagFetchErr) {
+        console.error('[send] Failed to fetch "Bot Muted" tag:', tagFetchErr)
+      } else if (!tag) {
+        const { data: newTag, error: tagCreateErr } = await supabase
+          .from('tags')
+          .insert({
+            account_id: accountId,
+            user_id: user.id,
+            name: 'Bot Muted',
+            color: '#ef4444',
+          })
+          .select('id')
+          .single()
+
+        if (tagCreateErr) {
+          console.error('[send] Failed to create "Bot Muted" tag:', tagCreateErr)
+        } else {
+          tag = newTag
+        }
+      }
+
+      if (tag) {
+        const { error: tagLinkErr } = await supabase
+          .from('contact_tags')
+          .upsert(
+            {
+              contact_id: contact.id,
+              tag_id: tag.id,
+            },
+            { onConflict: 'contact_id,tag_id' }
+          )
+
+        if (tagLinkErr) {
+          console.error('[send] Failed to link "Bot Muted" tag to contact:', tagLinkErr)
+        } else {
+          console.log(`[send] AI Bot auto-muted for contact ${contact.phone} due to agent message`)
+        }
+      }
+    } catch (err) {
+      console.error('[send] Failed to auto-mute AI Bot:', err)
+    }
 
     // Pause any active Flow run for this contact — the agent stepping
     // in is the strongest "yield, human is here" signal. See PR #2

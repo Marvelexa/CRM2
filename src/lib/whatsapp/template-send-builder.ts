@@ -31,7 +31,7 @@
  */
 
 import type { MessageTemplate, TemplateButton } from '@/types';
-import { extractVariableIndices } from './template-validators';
+import { extractVariableIndices, extractVariableNames } from './template-validators';
 
 export interface SendTimeParams {
   /** Values for body {{1}}, {{2}}, … indexed by variable position. */
@@ -62,7 +62,7 @@ export type MetaSendComponent =
     };
 
 type MetaSendParameter =
-  | { type: 'text'; text: string }
+  | { type: 'text'; text: string; parameter_name?: string }
   | { type: 'image'; image: { link?: string; id?: string } }
   | { type: 'video'; video: { link?: string; id?: string } }
   | { type: 'document'; document: { link?: string; id?: string } }
@@ -77,20 +77,26 @@ function buildHeaderComponent(
   if (!headerType) return null;
 
   if (headerType === 'text') {
-    // TEXT header with {{1}} → need a value. Static text headers
+    // TEXT header with variables → need a value. Static text headers
     // (no variables) just ride along inside the template itself; no
     // header component required on send.
-    const varCount = extractVariableIndices(template.header_content ?? '').length;
-    if (varCount === 0) return null;
+    const varNames = extractVariableNames(template.header_content ?? '');
+    if (varNames.length === 0) return null;
     const value = params.headerText;
     if (!value || !value.trim()) {
       throw new Error(
-        'Header text variable {{1}} requires a value — pass headerText.',
+        'Header text variable requires a value — pass headerText.',
       );
     }
+    const varName = varNames[0];
+    const isNamed = varName && !/^\d+$/.test(varName);
     return {
       type: 'header',
-      parameters: [{ type: 'text', text: value }],
+      parameters: [
+        isNamed
+          ? { type: 'text', parameter_name: varName, text: value }
+          : { type: 'text', text: value },
+      ],
     };
   }
 
@@ -127,20 +133,26 @@ function buildBodyComponent(
   template: MessageTemplate,
   params: SendTimeParams,
 ): MetaSendComponent | null {
-  const varCount = extractVariableIndices(template.body_text).length;
+  const varNames = extractVariableNames(template.body_text);
   const body = params.body ?? [];
-  if (varCount === 0 && body.length === 0) return null;
-  if (body.length < varCount) {
+  if (varNames.length === 0 && body.length === 0) return null;
+  if (body.length < varNames.length) {
     throw new Error(
-      `Body has ${varCount} variable(s) but only ${body.length} value(s) were supplied.`,
+      `Body has ${varNames.length} variable(s) but only ${body.length} value(s) were supplied.`,
     );
   }
   // Trim to the variable count — extra values are dropped silently so
   // a legacy caller that passes too many doesn't error out.
-  const values = body.slice(0, varCount);
+  const values = body.slice(0, varNames.length);
   return {
     type: 'body',
-    parameters: values.map((text) => ({ type: 'text', text: String(text) })),
+    parameters: values.map((text, i) => {
+      const varName = varNames[i];
+      const isNamed = varName && !/^\d+$/.test(varName);
+      return isNamed
+        ? { type: 'text', parameter_name: varName, text: String(text) }
+        : { type: 'text', text: String(text) };
+    }),
   };
 }
 
@@ -150,7 +162,7 @@ function buttonNeedsSendParam(
 ): boolean {
   switch (button.type) {
     case 'URL':
-      return extractVariableIndices(button.url).length > 0;
+      return extractVariableNames(button.url).length > 0;
     case 'COPY_CODE':
       // We always emit a button param for COPY_CODE so the customer
       // gets a real code (either the caller's override or the
@@ -175,14 +187,21 @@ function buildButtonComponent(
       // the button's index in the template's buttons array.
       if (!override || !override.trim()) {
         throw new Error(
-          `URL button #${index + 1} uses {{1}} — requires a buttonParams[${index}] value.`,
+          `URL button #${index + 1} uses variables — requires a buttonParams[${index}] value.`,
         );
       }
+      const varNames = extractVariableNames(button.url);
+      const varName = varNames[0];
+      const isNamed = varName && !/^\d+$/.test(varName);
       return {
         type: 'button',
         sub_type: 'url',
         index: String(index),
-        parameters: [{ type: 'text', text: override }],
+        parameters: [
+          isNamed
+            ? { type: 'text', parameter_name: varName, text: override }
+            : { type: 'text', text: override },
+        ],
       };
     }
     case 'COPY_CODE': {

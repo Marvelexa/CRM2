@@ -484,6 +484,23 @@ export default function InboxPage() {
     router.replace("/inbox", { scroll: false });
   }, [router]);
 
+  const handleContactUpdated = useCallback((updatedContact: Contact) => {
+    setActiveContact(updatedContact);
+    setActiveConversation((prev) => {
+      if (prev && prev.contact?.id === updatedContact.id) {
+        return { ...prev, contact: updatedContact };
+      }
+      return prev;
+    });
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.contact?.id === updatedContact.id
+          ? { ...c, contact: updatedContact }
+          : c
+      )
+    );
+  }, []);
+
 
   const handleMessagesLoaded = useCallback((loaded: Message[]) => {
     setMessages(loaded);
@@ -615,7 +632,10 @@ export default function InboxPage() {
             toggle — which is itself desktop-only — never affects it. */}
         {contactPanelOpen && (
           <div className="hidden lg:block">
-            <ContactSidebar contact={activeContact} />
+            <ContactSidebar
+              contact={activeContact}
+              onContactUpdated={handleContactUpdated}
+            />
           </div>
         )}
       </div>
