@@ -262,15 +262,16 @@ export async function POST(request: Request) {
         .eq('language', template_language || 'en_US')
         .maybeSingle()
         
-      if (!data && !template_language) {
-        const { data: enData } = await supabase
+      if (!data) {
+        const altLang = (template_language || 'en_US') === 'en_US' ? 'en' : 'en_US'
+        const { data: altData } = await supabase
           .from('message_templates')
           .select('*')
           .eq('account_id', accountId)
           .eq('name', template_name)
-          .eq('language', 'en')
+          .eq('language', altLang)
           .maybeSingle()
-        data = enData
+        data = altData
       }
 
       if (data && !isMessageTemplate(data)) {
@@ -406,7 +407,7 @@ export async function POST(request: Request) {
         sender_type: 'agent',
         content_type: message_type,
         content_text: content_text || null,
-        media_url: media_url || null,
+        media_url: media_url || finalMessageParams?.headerMediaUrl || null,
         template_name: template_name || null,
         message_id: waMessageId,
         status: 'sent',
