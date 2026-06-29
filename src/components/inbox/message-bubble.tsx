@@ -2,8 +2,10 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
-import type { Message, MessageReaction } from "@/types";
+import type { Message, MessageReaction, MessageTemplate } from "@/types";
+import { createClient } from "@/lib/supabase/client";
 import {
+  Clock,
   Clock,
   Check,
   CheckCheck,
@@ -116,6 +118,87 @@ function MediaImage({ url, alt }: { url: string; alt: string }) {
   );
 }
 
+function TemplateMessageContent({ message }: { message: Message }) {
+  const [template, setTemplate] = useState<MessageTemplate | null>(null);
+  
+  useEffect(() => {
+    if (!message.template_name) return;
+    let cancelled = false;
+    const fetchTemplate = async () => {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("message_templates")
+        .select("buttons")
+        .eq("name", message.template_name)
+        .limit(1)
+        .maybeSingle();
+      if (!cancelled && data) {
+        setTemplate(data as MessageTemplate);
+      }
+    };
+    fetchTemplate();
+    return () => { cancelled = true; };
+  }, [message.template_name]);
+
+  const isVideoHeader = message.media_url && (message.media_url.endsWith(".mp4") || message.media_url.includes("video") || message.media_url.includes("/videos/"));
+  const isImageHeader = message.media_url && (message.media_url.endsWith(".jpg") || message.media_url.endsWith(".jpeg") || message.media_url.endsWith(".png") || message.media_url.includes("image"));
+
+  // Check if this bubble is outbound (agent/bot) so we can style buttons against the primary background
+  const isAgent = message.sender_type === "agent" || message.sender_type === "bot";
+  
+  return (
+    <div className="flex flex-col">
+      <span className={cn(
+        "mb-2 inline-flex items-center gap-1 self-start rounded px-1.5 py-0.5 text-[10px] font-medium",
+        isAgent ? "bg-primary-foreground/10 text-primary-foreground/90" : "bg-primary/10 text-primary"
+      )}>
+        <LayoutTemplate className="h-3 w-3" />
+        Template
+      </span>
+      {message.media_url && (
+        <div className="mb-2 mt-1">
+          {isVideoHeader ? (
+            <video src={message.media_url} controls preload="auto" playsInline className="max-h-64 max-w-60 rounded-lg" />
+          ) : isImageHeader ? (
+            <MediaImage url={message.media_url} alt="Template header image" />
+          ) : (
+            <a href={message.media_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 rounded-lg bg-muted/50 px-3 py-2 text-sm hover:bg-muted">
+              <FileText className="h-5 w-5 shrink-0 text-muted-foreground" />
+              <span className="truncate">Header Attachment</span>
+            </a>
+          )}
+        </div>
+      )}
+      {message.content_text && (
+        <p className="mt-1 whitespace-pre-wrap break-words text-sm">
+          {message.content_text}
+        </p>
+      )}
+      {template?.buttons && template.buttons.length > 0 && (
+        <div className={cn(
+          "mt-2 flex flex-col gap-1.5 pt-2 border-t",
+          isAgent ? "border-primary-foreground/20" : "border-primary/20"
+        )}>
+          {template.buttons.map((btn, i) => (
+            <div 
+              key={i} 
+              className={cn(
+                "flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-[13px] font-medium transition-colors cursor-default",
+                isAgent 
+                  ? "bg-primary-foreground/10 hover:bg-primary-foreground/20 text-primary-foreground" 
+                  : "bg-muted-foreground/10 hover:bg-muted-foreground/20 text-foreground"
+              )}
+            >
+              <CornerDownLeft className="h-3.5 w-3.5 opacity-70" />
+              {btn.text}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MessageContent({ message }: { message: Message }) {
   switch (message.content_type) {
     case "text":
@@ -192,48 +275,8 @@ function MessageContent({ message }: { message: Message }) {
         </a>
       );
 
-    case "template": {
-      const isVideoHeader = message.media_url && (message.media_url.endsWith(".mp4") || message.media_url.includes("video") || message.media_url.includes("/videos/"));
-      const isImageHeader = message.media_url && (message.media_url.endsWith(".jpg") || message.media_url.endsWith(".jpeg") || message.media_url.endsWith(".png") || message.media_url.includes("image"));
-      return (
-        <div>
-          <span className="mb-2 inline-flex items-center gap-1 rounded bg-primary/20 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-            <LayoutTemplate className="h-3 w-3" />
-            Template
-          </span>
-          {message.media_url && (
-            <div className="mb-2 mt-1">
-              {isVideoHeader ? (
-                <video
-                  src={message.media_url}
-                  controls
-                  preload="auto"
-                  playsInline
-                  className="max-h-64 max-w-60 rounded-lg"
-                />
-              ) : isImageHeader ? (
-                <MediaImage url={message.media_url} alt="Template header image" />
-              ) : (
-                <a
-                  href={message.media_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-2 rounded-lg bg-muted/50 px-3 py-2 text-sm hover:bg-muted"
-                >
-                  <FileText className="h-5 w-5 shrink-0 text-muted-foreground" />
-                  <span className="truncate">Header Attachment</span>
-                </a>
-              )}
-            </div>
-          )}
-          {message.content_text && (
-            <p className="mt-1 whitespace-pre-wrap break-words text-sm">
-              {message.content_text}
-            </p>
-          )}
-        </div>
-      );
-    }
+    case "template":
+      return <TemplateMessageContent message={message} />;
 
     case "location":
       return (
