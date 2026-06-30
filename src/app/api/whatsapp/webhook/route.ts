@@ -349,29 +349,7 @@ async function handleStatusUpdate(status: {
     console.error('Error updating message status:', msgErr)
   }
 
-  // 1.5) DEBUG: If status is failed, log the error to the conversation so we can read it
-  if (status.status === 'failed' && status.errors && status.errors.length > 0) {
-    try {
-      // Find the message
-      const { data: msgData } = await supabaseAdmin()
-        .from('messages')
-        .select('conversation_id')
-        .eq('message_id', status.id)
-        .maybeSingle()
-        
-      if (msgData?.conversation_id) {
-        await supabaseAdmin()
-          .from('conversations')
-          .update({
-            last_message_text: `[DEBUG FAILED] ${JSON.stringify(status.errors)}`,
-            last_message_at: new Date().toISOString()
-          })
-          .eq('id', msgData.conversation_id)
-      }
-    } catch (e) {
-      // ignore
-    }
-  }
+  // 1.5) DEBUG: Removed debug logging.
 
   // 2) Mirror onto broadcast_recipients via whatsapp_message_id
   //    (added in migration 003). The aggregate trigger on
