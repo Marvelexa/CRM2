@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { SummariesClient } from "./summaries-client";
 
 export default async function SummariesPage() {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const {
     data: { user },
