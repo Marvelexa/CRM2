@@ -7,21 +7,32 @@ export async function generateAIReply(
   messagesFormatted: string,
   systemPrompt: string
 ): Promise<string> {
+  const geminiApiKey = process.env.GEMINI_API_KEY;
   const opencodeApiKey = process.env.OPENCODE_API_KEY;
   const opencodeBaseUrl = process.env.OPENCODE_API_BASE_URL || "https://opencode.ai/zen/v1";
   const opencodeModel = process.env.OPENCODE_MODEL_NAME || "deepseek-v4-flash-free";
 
-  if (!opencodeApiKey) {
-    console.warn("[AI Bot] OpenCode API key is missing. Attempting Gemini fallback...");
-    const geminiApiKey = process.env.GEMINI_API_KEY;
-    if (geminiApiKey) {
-      return generateGeminiReply(messagesFormatted, systemPrompt, geminiApiKey);
+  // Priority 1: Gemini (Faster and more reliable)
+  if (geminiApiKey) {
+    try {
+      return await generateGeminiReply(messagesFormatted, systemPrompt, geminiApiKey);
+    } catch (geminiErr) {
+      console.warn("[AI Bot] Gemini generation failed. Falling back to OpenCode...", geminiErr);
     }
-    throw new Error("Neither OpenCode nor Gemini API key is configured in environment variables.");
+  }
+
+  // Priority 2: OpenCode (Fallback)
+  if (!opencodeApiKey) {
+    throw new Error("Neither Gemini nor OpenCode API key is configured or working.");
   }
 
   try {
     console.log(`[AI Bot] Calling OpenCode Chat Completion with model: ${opencodeModel}...`);
+    
+    // Add a 7-second timeout so it doesn't hang forever
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 7000);
+
     const response = await fetch(`${opencodeBaseUrl}/chat/completions`, {
       method: "POST",
       headers: {
@@ -37,7 +48,9 @@ export async function generateAIReply(
         temperature: 0.7,
         max_tokens: 1000,
       }),
+      signal: controller.signal
     });
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -52,16 +65,7 @@ export async function generateAIReply(
     }
     throw new Error("Invalid response format from OpenCode API");
   } catch (err) {
-    console.warn("[AI Bot] OpenCode generation failed. Falling back to Gemini...", err);
-    const geminiApiKey = process.env.GEMINI_API_KEY;
-    if (geminiApiKey) {
-      try {
-        return await generateGeminiReply(messagesFormatted, systemPrompt, geminiApiKey);
-      } catch (geminiErr) {
-        console.error("[AI Bot] Gemini fallback also failed:", geminiErr);
-        throw geminiErr;
-      }
-    }
+    console.error("[AI Bot] OpenCode fallback also failed:", err);
     throw err;
   }
 }
