@@ -14,13 +14,13 @@ export default async function SummariesPage() {
   }
 
   // Fetch the user's active account
-  const { data: member } = await supabase
-    .from("account_members")
+  const { data: profile } = await supabase
+    .from("profiles")
     .select("account_id")
     .eq("user_id", user.id)
     .single();
 
-  if (!member) {
+  if (!profile || !profile.account_id) {
     redirect("/login");
   }
 
@@ -28,14 +28,14 @@ export default async function SummariesPage() {
   const { data: conversations } = await supabase
     .from("conversations")
     .select("*, contact:contacts(*)")
-    .eq("account_id", member.account_id)
+    .eq("account_id", profile.account_id)
     .order("last_message_at", { ascending: false });
 
   // Fetch all AI Summaries from contact_notes
   const { data: notes } = await supabase
     .from("contact_notes")
     .select("*")
-    .eq("account_id", member.account_id)
+    .eq("account_id", profile.account_id)
     .like("note_text", "[AI Summary]%")
     .order("created_at", { ascending: false });
 
@@ -51,7 +51,7 @@ export default async function SummariesPage() {
         <SummariesClient 
           initialConversations={conversations || []} 
           initialSummaries={notes || []}
-          accountId={member.account_id}
+          accountId={profile.account_id}
         />
       </div>
     </div>
