@@ -54,6 +54,24 @@ function MediaUnavailable({ label }: { label: string }) {
   );
 }
 
+function formatWhatsAppText(text: string | null) {
+  if (!text) return null;
+  
+  // Split the text by bold markers (* or **)
+  // Regex matches **text** or *text*
+  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g);
+  
+  return parts.map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={i} className="font-bold">{part.slice(2, -2)}</strong>;
+    }
+    if (part.startsWith('*') && part.endsWith('*')) {
+      return <strong key={i} className="font-bold">{part.slice(1, -1)}</strong>;
+    }
+    return part;
+  });
+}
+
 function MediaImage({ url, alt }: { url: string; alt: string }) {
   const [src, setSrc] = useState<string | null>(null);
   const [error, setError] = useState(false);
@@ -170,7 +188,7 @@ function TemplateMessageContent({ message }: { message: Message }) {
       )}
       {message.content_text && (
         <p className="mt-1 whitespace-pre-wrap break-words text-sm">
-          {message.content_text}
+          {formatWhatsAppText(message.content_text)}
         </p>
       )}
       {template?.buttons && template.buttons.length > 0 && (
@@ -203,7 +221,7 @@ function MessageContent({ message }: { message: Message }) {
     case "text":
       return (
         <p className="whitespace-pre-wrap break-words text-sm">
-          {message.content_text}
+          {formatWhatsAppText(message.content_text)}
         </p>
       );
 
@@ -217,7 +235,7 @@ function MessageContent({ message }: { message: Message }) {
           )}
           {message.content_text && (
             <p className="mt-1 whitespace-pre-wrap break-words text-sm">
-              {message.content_text}
+              {formatWhatsAppText(message.content_text)}
             </p>
           )}
         </div>
@@ -239,7 +257,7 @@ function MessageContent({ message }: { message: Message }) {
           )}
           {message.content_text && (
             <p className="mt-1 whitespace-pre-wrap break-words text-sm">
-              {message.content_text}
+              {formatWhatsAppText(message.content_text)}
             </p>
           )}
         </div>
@@ -298,7 +316,7 @@ function MessageContent({ message }: { message: Message }) {
             Button reply
           </span>
           <p className="whitespace-pre-wrap break-words text-sm">
-            {message.content_text || "[Interactive reply]"}
+            {formatWhatsAppText(message.content_text || "[Interactive reply]")}
           </p>
         </div>
       );
@@ -307,7 +325,7 @@ function MessageContent({ message }: { message: Message }) {
     default:
       return (
         <p className="whitespace-pre-wrap break-words text-sm">
-          {message.content_text || "[Unsupported message type]"}
+          {formatWhatsAppText(message.content_text || "[Unsupported message type]")}
         </p>
       );
   }
