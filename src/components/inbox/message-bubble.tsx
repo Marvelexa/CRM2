@@ -54,7 +54,7 @@ function MediaUnavailable({ label }: { label: string }) {
   );
 }
 
-function formatWhatsAppText(text: string | null) {
+function formatWhatsAppText(text: string | null | undefined) {
   if (!text) return null;
   
   // Split the text by bold markers (* or **)
