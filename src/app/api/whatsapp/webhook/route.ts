@@ -830,19 +830,18 @@ async function processMessage(
     }).catch((err) => console.error('[automations] dispatch failed:', err))
   }
 
-  // Trigger AI Auto-reply asynchronously if not consumed by a Flow
+  // Trigger AI Auto-reply synchronously if not consumed by a Flow
   if (!flowConsumed) {
-    isBotMutedForContact(supabaseAdmin(), contactRecord.id).then((muted) => {
+    try {
+      const muted = await isBotMutedForContact(supabaseAdmin(), contactRecord.id)
       if (!muted) {
-        handleAIAutoReply(conversation, contactRecord, accessToken, phoneNumberId).catch((err) => {
-          console.error('[webhook] handleAIAutoReply failed:', err)
-        })
+        await handleAIAutoReply(conversation, contactRecord, accessToken, phoneNumberId)
       } else {
         console.log(`[webhook] AI Bot is muted for contact ${contactRecord.phone}`)
       }
-    }).catch((err) => {
-      console.error('[webhook] failed to check bot mute status:', err)
-    })
+    } catch (err) {
+      console.error('[webhook] AI auto reply logic failed:', err)
+    }
   }
 }
 
