@@ -10,7 +10,7 @@ export default async function SummariesPage() {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect("/auth/signin");
+    redirect("/login");
   }
 
   // Fetch the user's active account
@@ -21,7 +21,7 @@ export default async function SummariesPage() {
     .single();
 
   if (!member) {
-    redirect("/auth/signin");
+    redirect("/login");
   }
 
   // Fetch all conversations with contacts
