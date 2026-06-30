@@ -545,6 +545,32 @@ async function handleAIAutoReply(
       })
       .join('\n')
 
+    const phoneStr = contact.phone || '';
+    let detectedCountry = "Unknown";
+    if (phoneStr.startsWith("91")) detectedCountry = "India";
+    else if (phoneStr.startsWith("1")) detectedCountry = "United States/Canada";
+    else if (phoneStr.startsWith("44")) detectedCountry = "United Kingdom";
+    else if (phoneStr.startsWith("61")) detectedCountry = "Australia";
+    else if (phoneStr.startsWith("64")) detectedCountry = "New Zealand";
+    else if (phoneStr.startsWith("65")) detectedCountry = "Singapore";
+    else if (phoneStr.startsWith("971")) detectedCountry = "UAE";
+    else if (phoneStr.startsWith("966")) detectedCountry = "Saudi Arabia";
+    else if (phoneStr.startsWith("974")) detectedCountry = "Qatar";
+    else if (phoneStr.startsWith("968")) detectedCountry = "Oman";
+    else if (phoneStr.startsWith("965")) detectedCountry = "Kuwait";
+    else if (phoneStr.startsWith("973")) detectedCountry = "Bahrain";
+    else if (phoneStr.startsWith("60")) detectedCountry = "Malaysia";
+    else if (phoneStr.startsWith("66")) detectedCountry = "Thailand";
+    else if (phoneStr.startsWith("63")) detectedCountry = "Philippines";
+    else if (phoneStr.startsWith("62")) detectedCountry = "Indonesia";
+    else if (phoneStr.startsWith("84")) detectedCountry = "Vietnam";
+    else if (phoneStr.startsWith("81")) detectedCountry = "Japan";
+    else if (phoneStr.startsWith("82")) detectedCountry = "South Korea";
+    else if (phoneStr.startsWith("55")) detectedCountry = "Brazil";
+    else if (phoneStr.startsWith("52")) detectedCountry = "Mexico";
+    else if (phoneStr.startsWith("27")) detectedCountry = "South Africa";
+    else if (phoneStr.startsWith("90")) detectedCountry = "Türkiye";
+
     // 2) Define system instruction (prompt)
     const systemPrompt = `You are Nexvora AI, an elite Professional Website Consultant & UX Expert, not just a customer service bot. 
 Your goal is to guide clients through web development, design modifications, and project updates using the following core frameworks:
@@ -560,8 +586,8 @@ Your goal is to guide clients through web development, design modifications, and
 9. DYNAMIC QUICK REPLIES: Provide numbered bullet points for options so the user can easily select what they want next.
 10. PROJECT MEMORY: Acknowledge that you are building their website. Maintain a professional, high-end agency tone.
 
-PRICING KNOWLEDGE (DYNAMIC BY COUNTRY):
-You must determine the customer's country based on their phone number country code (e.g., +91 is India, +1 is US/Canada, +44 is UK, etc.) or ask them if unsure. Then, quote prices strictly from this table:
+PRICING KNOWLEDGE:
+You must quote prices strictly from this table based on the customer's detected country:
 - India (INR): Starter ₹8,999 | Growth ₹19,999 | Professional ₹39,999 | Enterprise ₹69,999+
 - United States (USD): Starter $299 | Growth $599 | Professional $999 | Enterprise $1,500+
 - United Kingdom (GBP): Starter £249 | Growth £499 | Professional £849 | Enterprise £1,299+
@@ -596,7 +622,8 @@ LANGUAGE & TONE:
 - Do not prefix your reply with "Nexvora:" or "Bot:". Just reply directly.
   
 CUSTOMER DETAILS:
-Phone Number: ${contact.phone} (Use the country code to determine their pricing from the table above).`
+Phone Number: ${contact.phone}
+Detected Country: ${detectedCountry} (CRITICAL: You MUST use the pricing for this country from the table above).`
 
     // 3) Call AI API
     const replyText = await generateAIReply(messagesFormatted, systemPrompt)
