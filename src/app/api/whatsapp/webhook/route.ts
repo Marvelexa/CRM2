@@ -349,7 +349,42 @@ async function handleStatusUpdate(status: {
     console.error('Error updating message status:', msgErr)
   }
 
-  // 1.5) DEBUG: Removed debug logging.
+  // 1.5) Show friendly errors in the conversation list if delivery fails
+  if (status.status === 'failed' && status.errors && status.errors.length > 0) {
+    try {
+      const errCode = status.errors[0]?.code;
+      let friendlyError = '';
+      
+      if (errCode === 131026) {
+        friendlyError = '❌ Delivery failed: This number is not on WhatsApp.';
+      } else if (errCode === 131049) {
+        friendlyError = '❌ Delivery blocked: WhatsApp spam filter (Wait 24h or get a reply first).';
+      } else if (errCode === 131047) {
+        friendlyError = '❌ Delivery failed: The customer has blocked your business.';
+      } else {
+        friendlyError = `❌ Delivery failed: Error code ${errCode}`;
+      }
+
+      // Find the message
+      const { data: msgData } = await supabaseAdmin()
+        .from('messages')
+        .select('conversation_id')
+        .eq('message_id', status.id)
+        .maybeSingle()
+        
+      if (msgData?.conversation_id) {
+        await supabaseAdmin()
+          .from('conversations')
+          .update({
+            last_message_text: friendlyError,
+            last_message_at: new Date().toISOString()
+          })
+          .eq('id', msgData.conversation_id)
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
 
   // 2) Mirror onto broadcast_recipients via whatsapp_message_id
   //    (added in migration 003). The aggregate trigger on
