@@ -518,7 +518,7 @@ export async function engineSendInteractiveCtaUrl(
     status: 'sent',
   })
   if (msgErr) {
-    throw new Error(sent to Meta but DB insert failed: )
+    throw new Error(`sent to Meta but DB insert failed: ${msgErr.message}`)
   }
 
   await db
