@@ -461,7 +461,7 @@ export async function engineSendInteractiveCtaUrl(
 
   const sanitized = sanitizePhoneForMeta(contact.phone)
   if (!isValidE164(sanitized)) {
-    throw new Error(contact phone invalid: )
+    throw new Error(`contact phone invalid: ${contact.phone}`)
   }
 
   const { data: config, error: configErr } = await db
