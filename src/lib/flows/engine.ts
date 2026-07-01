@@ -70,17 +70,17 @@ import {
 export function matchReplyId(
   node: { node_type: string; config: Record<string, unknown> },
   reply_id: string,
-): string | null {
+): { next_node_key: string; title: string } | null {
   if (node.node_type === "send_buttons") {
     const cfg = node.config as unknown as SendButtonsNodeConfig;
     const hit = cfg.buttons?.find((b) => b.reply_id === reply_id);
-    return hit?.next_node_key ?? null;
+    return hit ? { next_node_key: hit.next_node_key, title: hit.title } : null;
   }
   if (node.node_type === "send_list") {
     const cfg = node.config as unknown as SendListNodeConfig;
     for (const section of cfg.sections ?? []) {
       const hit = section.rows?.find((r) => r.reply_id === reply_id);
-      if (hit) return hit.next_node_key;
+      if (hit) return { next_node_key: hit.next_node_key, title: hit.title };
     }
     return null;
   }
@@ -948,7 +948,21 @@ async function handleReplyForActiveRun(
     (currentNode.node_type === "send_buttons" ||
       currentNode.node_type === "send_list")
   ) {
-    matched = matchReplyId(currentNode, message.reply_id);
+    const matchResult = matchReplyId(currentNode, message.reply_id);
+    if (matchResult) {
+      matched = matchResult.next_node_key;
+      // Persist the selected title into vars using the node's key
+      const newVars = { ...run.vars, [currentNode.node_key]: matchResult.title };
+      const { error: capErr } = await db
+        .from("flow_runs")
+        .update({
+          vars: newVars,
+        })
+        .eq("id", run.id);
+      if (!capErr) {
+        run.vars = newVars;
+      }
+    }
   } else if (
     message.kind === "text" &&
     currentNode.node_type === "collect_input"
@@ -1134,3 +1148,4 @@ async function startNewRun(
     outcome: outcome.outcome === "advanced" ? "started" : outcome.outcome,
   };
 }
+
