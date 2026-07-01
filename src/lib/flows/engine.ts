@@ -580,7 +580,33 @@ async function advanceFromNodeKey(
     if (node.node_type === "send_message") {
       const cfg = node.config as unknown as SendMessageNodeConfig;
       try {
-        const textToSend = interpolateVars(cfg.text, run.vars);
+        let textToSend = interpolateVars(cfg.text, run.vars);
+        
+        if (node.node_key.startsWith("pricing_biz_")) {
+          const city = (run.vars.ask_city || run.vars.ask_city_hi || "🇺🇸 United States") as string;
+          
+          let p1, p2, p3, p4;
+          if (city.includes("United Kingdom") || city.includes("UK")) {
+            p1 = "£239"; p2 = "£479"; p3 = "£789"; p4 = "£1,199+";
+          } else if (city.includes("Canada") || city.includes("कनाडा")) {
+            p1 = "$399 CAD"; p2 = "$819 CAD"; p3 = "$1,369 CAD"; p4 = "$2,049+ CAD";
+          } else if (city.includes("Australia")) {
+            p1 = "$449 AUD"; p2 = "$899 AUD"; p3 = "$1,499 AUD"; p4 = "$2,249+ AUD";
+          } else if (city.includes("India") || city.includes("भारत")) {
+            p1 = "₹24,999"; p2 = "₹49,999"; p3 = "₹82,999"; p4 = "₹1,24,999+";
+          } else if (city.includes("Kuwait") || city.includes("कुवैत")) {
+            p1 = "64 KWD"; p2 = "129 KWD"; p3 = "219 KWD"; p4 = "329+ KWD";
+          } else {
+            p1 = "$299"; p2 = "$599"; p3 = "$999"; p4 = "$1,500+";
+          }
+          
+          textToSend = textToSend.replace("$299", p1);
+          textToSend = textToSend.replace("$599", p2); // First instance
+          textToSend = textToSend.replace("$599", p2); // Second instance
+          textToSend = textToSend.replace("$999", p3);
+          textToSend = textToSend.replace("$1,500+", p4);
+        }
+
         let whatsapp_message_id = '';
         
         if (textToSend.includes("Your information has been submitted successfully")) {
