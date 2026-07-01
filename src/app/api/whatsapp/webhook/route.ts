@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
-import { getMediaUrl, downloadMedia, sendTextMessage } from '@/lib/whatsapp/meta-api'
+import { getMediaUrl, downloadMedia, sendTextMessage, sendInteractiveCtaUrl } from '@/lib/whatsapp/meta-api'
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
@@ -715,6 +715,43 @@ Detected Country: ${detectedCountry} (CRITICAL: You MUST use the pricing for thi
         updated_at: new Date().toISOString(),
       })
       .eq('id', conversation.id)
+
+    // 7) If the user clicked 'Interested' on the outreach template, follow up with the portfolio button
+    const isInterested = lastCustomerMsg && lastCustomerMsg.content_text && lastCustomerMsg.content_text.toLowerCase().includes('interested');
+    if (isInterested) {
+      try {
+        const ctaResult = await sendInteractiveCtaUrl({
+          phoneNumberId,
+          accessToken,
+          to: contact.phone,
+          bodyText: 'You can visit our portfolio to see our recent work!',
+          buttonText: 'Visit on our Website',
+          url: 'https://nexvora-ud88.onrender.com'
+        })
+        
+        await supabaseAdmin()
+          .from('messages')
+          .insert({
+            conversation_id: conversation.id,
+            sender_type: 'bot',
+            content_type: 'interactive',
+            content_text: 'You can visit our portfolio to see our recent work!',
+            message_id: ctaResult.messageId,
+            status: 'sent',
+          })
+          
+        await supabaseAdmin()
+          .from('conversations')
+          .update({
+            last_message_text: 'You can visit our portfolio to see our recent work!',
+            last_message_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', conversation.id)
+      } catch (ctaErr) {
+        console.error('[webhook] Failed to send CTA URL button:', ctaErr)
+      }
+    }
 
   } catch (err) {
     console.error('[webhook] AI auto-reply failed:', err)
