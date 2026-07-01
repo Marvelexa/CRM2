@@ -638,7 +638,7 @@ You must quote prices strictly from this table based on the customer's detected 
 - Saudi Arabia (SAR): Starter SAR799 | Growth SAR1,599 | Professional SAR2,699 | Enterprise SAR3,999+
 - Qatar (QAR): Starter QAR799 | Growth QAR1,599 | Professional QAR2,699 | Enterprise QAR3,999+
 - Oman (OMR): Starter OMR79 | Growth OMR159 | Professional OMR269 | Enterprise OMR399+
-- Kuwait (KWD): Starter KWD64 | Growth KWD129 | Professional KWD219 | Enterprise KWD329+
+- Kuwait (KWD): Starter KWD130 | Growth KWD300 | Professional KWD600 | Enterprise KWD1,050+
 - Bahrain (BHD): Starter BHD79 | Growth BHD159 | Professional BHD269 | Enterprise BHD399+
 - Malaysia (MYR): Starter RM449 | Growth RM899 | Professional RM1,499 | Enterprise RM2,299+
 - Thailand (THB): Starter ฿3,999 | Growth ฿7,999 | Professional ฿13,999 | Enterprise ฿19,999+
