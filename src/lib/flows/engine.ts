@@ -580,13 +580,32 @@ async function advanceFromNodeKey(
     if (node.node_type === "send_message") {
       const cfg = node.config as unknown as SendMessageNodeConfig;
       try {
-        const { whatsapp_message_id } = await engineSendText({
-          accountId: run.account_id,
-    userId: run.user_id,
-          conversationId: run.conversation_id!,
-          contactId: run.contact_id!,
-          text: interpolateVars(cfg.text, run.vars),
-        });
+        const textToSend = interpolateVars(cfg.text, run.vars);
+        let whatsapp_message_id = '';
+        
+        if (textToSend.includes("Your information has been submitted successfully")) {
+          const { engineSendInteractiveCtaUrl } = await import("./meta-send");
+          const res = await engineSendInteractiveCtaUrl({
+            accountId: run.account_id,
+            userId: run.user_id,
+            conversationId: run.conversation_id!,
+            contactId: run.contact_id!,
+            bodyText: textToSend,
+            ctaDisplayText: "Visit Our Portfolio",
+            ctaUrl: "https://nexvora-ud88.onrender.com"
+          });
+          whatsapp_message_id = res.whatsapp_message_id;
+        } else {
+          const res = await engineSendText({
+            accountId: run.account_id,
+            userId: run.user_id,
+            conversationId: run.conversation_id!,
+            contactId: run.contact_id!,
+            text: textToSend,
+          });
+          whatsapp_message_id = res.whatsapp_message_id;
+        }
+        
         await logEvent(db, run.id, "message_sent", node.node_key, {
           node_type: "send_message",
           whatsapp_message_id,
