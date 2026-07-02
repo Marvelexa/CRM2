@@ -185,14 +185,18 @@ export function TemplatePicker({
     () => (selected ? collectVariableSlots(selected) : null),
     [selected],
   );
+  const hasMediaHeader = selected && (selected.header_type === "video" || selected.header_type === "image" || selected.header_type === "document");
+  const mediaSatisfied = !hasMediaHeader || (selected && selected.header_media_url) || headerMediaUrl.trim().length > 0;
+
   const canConfirm =
     !!selected &&
     !!slots &&
+    !uploading &&
     slots.bodyVars.every((_, i) => (params[i] ?? "").trim().length > 0) &&
     (slots.headerVarCount === 0 || headerText.trim().length > 0) &&
     slots.urlButtonSlots.every(
       (s) => (buttonParams[s.index] ?? "").trim().length > 0,
-    );
+    ) && mediaSatisfied;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
