@@ -610,15 +610,15 @@ async function advanceFromNodeKey(
         let whatsapp_message_id = '';
         
         if (textToSend.includes("Your information has been submitted successfully")) {
-          const { engineSendInteractiveCtaUrl } = await import("./meta-send");
-          const res = await engineSendInteractiveCtaUrl({
+          const { engineSendInteractiveButtons } = await import("./meta-send");
+          const finalBodyText = textToSend + "\n\nPortfolio: https://nexvora-ud88.onrender.com";
+          const res = await engineSendInteractiveButtons({
             accountId: run.account_id,
             userId: run.user_id,
             conversationId: run.conversation_id!,
             contactId: run.contact_id!,
-            bodyText: textToSend,
-            ctaDisplayText: "Visit Our Portfolio",
-            ctaUrl: "https://nexvora-ud88.onrender.com"
+            bodyText: finalBodyText,
+            buttons: [{ id: 'about_nexvora', title: 'About Nexvora' }]
           });
           whatsapp_message_id = res.whatsapp_message_id;
         } else {
