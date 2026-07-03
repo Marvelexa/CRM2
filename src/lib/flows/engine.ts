@@ -596,6 +596,16 @@ async function advanceFromNodeKey(
             p1 = "₹24,999"; p2 = "₹49,999"; p3 = "₹82,999"; p4 = "₹1,24,999+";
           } else if (city.includes("Kuwait") || city.includes("कुवैत")) {
             p1 = "64 KWD"; p2 = "129 KWD"; p3 = "219 KWD"; p4 = "329+ KWD";
+          } else if (
+            city.includes("UAE") || 
+            city.includes("United Arab Emirates") || 
+            city.includes("Dubai") || 
+            city.includes("Abu Dhabi") || 
+            city.includes("Sharjah") || 
+            city.includes("संयुक्त अरब अमीरात") || 
+            city.includes("यूएई")
+          ) {
+            p1 = "AED 799"; p2 = "AED 1,599"; p3 = "AED 2,699"; p4 = "AED 3,999+";
           } else {
             p1 = "$299"; p2 = "$599"; p3 = "$999"; p4 = "$1,500+";
           }
