@@ -135,6 +135,20 @@ function MediaImage({ url, alt }: { url: string; alt: string }) {
   );
 }
 
+function unwrapMediaUrl(url: string | null | undefined): string | undefined {
+  if (!url) return undefined;
+  if (url.includes('proxy-media?url=')) {
+    try {
+      const urlObj = new URL(url);
+      const targetUrl = urlObj.searchParams.get('url');
+      if (targetUrl) return targetUrl;
+    } catch {
+      // Ignore
+    }
+  }
+  return url;
+}
+
 function TemplateMessageContent({ message }: { message: Message }) {
   const [template, setTemplate] = useState<MessageTemplate | null>(null);
   
@@ -157,8 +171,9 @@ function TemplateMessageContent({ message }: { message: Message }) {
     return () => { cancelled = true; };
   }, [message.template_name]);
 
-  const isVideoHeader = message.media_url && (message.media_url.endsWith(".mp4") || message.media_url.includes("video") || message.media_url.includes("/videos/"));
-  const isImageHeader = message.media_url && (message.media_url.endsWith(".jpg") || message.media_url.endsWith(".jpeg") || message.media_url.endsWith(".png") || message.media_url.includes("image"));
+  const mediaUrl = unwrapMediaUrl(message.media_url);
+  const isVideoHeader = mediaUrl && (mediaUrl.endsWith(".mp4") || mediaUrl.includes("video") || mediaUrl.includes("/videos/"));
+  const isImageHeader = mediaUrl && (mediaUrl.endsWith(".jpg") || mediaUrl.endsWith(".jpeg") || mediaUrl.endsWith(".png") || mediaUrl.includes("image"));
 
   // Check if this bubble is outbound (agent/bot) so we can style buttons against the primary background
   const isAgent = message.sender_type === "agent" || message.sender_type === "bot";
@@ -172,14 +187,14 @@ function TemplateMessageContent({ message }: { message: Message }) {
         <LayoutTemplate className="h-3 w-3" />
         Template
       </span>
-      {message.media_url && (
+      {mediaUrl && (
         <div className="mb-2 mt-1">
           {isVideoHeader ? (
-            <video src={message.media_url} controls preload="auto" playsInline className="max-h-64 max-w-60 rounded-lg" />
+            <video src={mediaUrl} controls preload="auto" playsInline className="max-h-64 max-w-60 rounded-lg" />
           ) : isImageHeader ? (
-            <MediaImage url={message.media_url} alt="Template header image" />
+            <MediaImage url={mediaUrl} alt="Template header image" />
           ) : (
-            <a href={message.media_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 rounded-lg bg-muted/50 px-3 py-2 text-sm hover:bg-muted">
+            <a href={mediaUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 rounded-lg bg-muted/50 px-3 py-2 text-sm hover:bg-muted">
               <FileText className="h-5 w-5 shrink-0 text-muted-foreground" />
               <span className="truncate">Header Attachment</span>
             </a>
@@ -217,6 +232,8 @@ function TemplateMessageContent({ message }: { message: Message }) {
 }
 
 function MessageContent({ message }: { message: Message }) {
+  const mediaUrl = unwrapMediaUrl(message.media_url);
+
   switch (message.content_type) {
     case "text":
       return (
@@ -228,8 +245,8 @@ function MessageContent({ message }: { message: Message }) {
     case "image":
       return (
         <div>
-          {message.media_url ? (
-            <MediaImage url={message.media_url} alt="Shared image" />
+          {mediaUrl ? (
+            <MediaImage url={mediaUrl} alt="Shared image" />
           ) : (
             <MediaUnavailable label="Image" />
           )}
@@ -244,9 +261,9 @@ function MessageContent({ message }: { message: Message }) {
     case "video":
       return (
         <div>
-          {message.media_url ? (
+          {mediaUrl ? (
             <video
-              src={message.media_url}
+              src={mediaUrl}
               controls
               preload="auto"
               playsInline
@@ -266,8 +283,8 @@ function MessageContent({ message }: { message: Message }) {
     case "audio":
       return (
         <div>
-          {message.media_url ? (
-            <audio src={message.media_url} controls className="max-w-60" />
+          {mediaUrl ? (
+            <audio src={mediaUrl} controls className="max-w-60" />
           ) : (
             <MediaUnavailable label="Audio" />
           )}
@@ -275,12 +292,12 @@ function MessageContent({ message }: { message: Message }) {
       );
 
     case "document":
-      if (!message.media_url) {
+      if (!mediaUrl) {
         return <MediaUnavailable label={message.content_text || "Document"} />;
       }
       return (
         <a
-          href={message.media_url}
+          href={mediaUrl}
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-2 rounded-lg bg-muted/50 px-3 py-2 text-sm hover:bg-muted"
