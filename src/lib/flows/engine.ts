@@ -605,7 +605,7 @@ async function advanceFromNodeKey(
             city.includes("संयुक्त अरब अमीरात") || 
             city.includes("यूएई")
           ) {
-            p1 = "AED 799"; p2 = "AED 1,599"; p3 = "AED 2,699"; p4 = "AED 3,999+";
+            p1 = "AED 1,499"; p2 = "AED 2,499"; p3 = "AED 3,999"; p4 = "AED 6,999+";
           } else {
             p1 = "$299"; p2 = "$599"; p3 = "$999"; p4 = "$1,500+";
           }

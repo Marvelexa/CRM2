@@ -636,7 +636,7 @@ You must quote prices strictly from this table based on the customer's detected 
 - New Zealand (NZD): Starter NZ$479 | Growth NZ$959 | Professional NZ$1,599 | Enterprise NZ$2,299+
 - Europe (EUR): Starter €279 | Growth €559 | Professional €939 | Enterprise €1,399+
 - Singapore (SGD): Starter S$389 | Growth S$779 | Professional S$1,299 | Enterprise S$1,899+
-- UAE (AED): Starter AED799 | Growth AED1,599 | Professional AED2,699 | Enterprise AED3,999+
+- UAE (AED): Starter AED 1,499 | Growth AED 2,499 | Professional AED 3,999 | Enterprise AED 6,999+
 - Saudi Arabia (SAR): Starter SAR799 | Growth SAR1,599 | Professional SAR2,699 | Enterprise SAR3,999+
 - Qatar (QAR): Starter QAR799 | Growth QAR1,599 | Professional QAR2,699 | Enterprise QAR3,999+
 - Oman (OMR): Starter OMR79 | Growth OMR159 | Professional OMR269 | Enterprise OMR399+
