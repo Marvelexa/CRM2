@@ -321,6 +321,16 @@ function MessageContent({ message }: { message: Message }) {
       );
 
     case "interactive": {
+      // If it was sent by the bot or an agent, it is an outbound interactive message.
+      // We do not show the "Button reply" incoming indicator.
+      if (message.sender_type === "bot" || message.sender_type === "agent") {
+        return (
+          <p className="whitespace-pre-wrap break-words text-sm">
+            {formatWhatsAppText(message.content_text || "[Interactive message]")}
+          </p>
+        );
+      }
+
       // Customer tapped a reply button or list row on a message the bot
       // sent. We show the tapped option's title (already in content_text,
       // set by parseMessageContent in the webhook) with a small affordance

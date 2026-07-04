@@ -401,6 +401,13 @@ async function sendInteractiveViaMeta(
     await db.from('contacts').update({ phone: workingPhone }).eq('id', contact.id)
   }
 
+  let dbText = input.bodyText;
+  if (input.kind === 'buttons' && input.buttons?.length > 0) {
+    dbText += "\n\nOptions:\n" + input.buttons.map(b => `🔘 ${b.title}`).join("\n");
+  } else if (input.kind === 'list' && input.sections?.length > 0) {
+    dbText += "\n\nOptions:\n" + input.sections.flatMap(s => s.rows || []).map(r => `🔘 ${r.title}`).join("\n");
+  }
+
   // Persist the bot's prompt to the messages table so it appears in
   // the inbox. content_type='interactive' is supported as of
   // migration 010; sender_type='bot' distinguishes flow sends from
@@ -414,7 +421,7 @@ async function sendInteractiveViaMeta(
     conversation_id: input.conversationId,
     sender_type: 'bot',
     content_type: 'interactive',
-    content_text: input.bodyText,
+    content_text: dbText,
     message_id: waMessageId,
     status: 'sent',
   })
@@ -425,7 +432,7 @@ async function sendInteractiveViaMeta(
   await db
     .from('conversations')
     .update({
-      last_message_text: input.bodyText,
+      last_message_text: dbText,
       last_message_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
@@ -509,11 +516,13 @@ export async function engineSendInteractiveCtaUrl(
     await db.from('contacts').update({ phone: workingPhone }).eq('id', contact.id)
   }
 
+  const dbText = args.bodyText + `\n\nLink: 🔗 [${args.ctaDisplayText}](${args.ctaUrl})`;
+
   const { error: msgErr } = await db.from('messages').insert({
     conversation_id: args.conversationId,
     sender_type: 'bot',
     content_type: 'interactive',
-    content_text: args.bodyText,
+    content_text: dbText,
     message_id: waMessageId,
     status: 'sent',
   })
@@ -524,7 +533,7 @@ export async function engineSendInteractiveCtaUrl(
   await db
     .from('conversations')
     .update({
-      last_message_text: args.bodyText,
+      last_message_text: dbText,
       last_message_at: new Date().toISOString(),
     })
     .eq('id', args.conversationId)
