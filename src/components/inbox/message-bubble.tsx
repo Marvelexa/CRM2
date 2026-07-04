@@ -14,6 +14,7 @@ import {
   LayoutTemplate,
   ImageOff,
   CornerDownLeft,
+  ExternalLink,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ReplyQuote } from "./reply-quote";
@@ -321,13 +322,76 @@ function MessageContent({ message }: { message: Message }) {
       );
 
     case "interactive": {
-      // If it was sent by the bot or an agent, it is an outbound interactive message.
-      // We do not show the "Button reply" incoming indicator.
-      if (message.sender_type === "bot" || message.sender_type === "agent") {
+      const isAgent = message.sender_type === "bot" || message.sender_type === "agent";
+
+      if (isAgent) {
+        const text = message.content_text || "";
+        const hasOptions = text.includes("\n\nOptions:\n");
+        const hasCta = text.includes("\n\nLink: 🔗 [");
+        
+        let bodyText = text;
+        let buttons: string[] = [];
+        let cta: { text: string; url: string } | null = null;
+        
+        if (hasOptions) {
+          const parts = text.split("\n\nOptions:\n");
+          bodyText = parts[0];
+          buttons = parts[1]
+            ? parts[1].split("\n").map(l => l.replace(/^🔘\s*/, "").trim()).filter(Boolean)
+            : [];
+        } else if (hasCta) {
+          const parts = text.split("\n\nLink: 🔗 [");
+          bodyText = parts[0];
+          const match = text.match(/\n\nLink: 🔗 \[(.*?)\]\((.*?)\)/);
+          if (match) {
+            cta = { text: match[1], url: match[2] };
+          }
+        }
+        
         return (
-          <p className="whitespace-pre-wrap break-words text-sm">
-            {formatWhatsAppText(message.content_text || "[Interactive message]")}
-          </p>
+          <div className="flex flex-col">
+            <p className="whitespace-pre-wrap break-words text-sm">
+              {formatWhatsAppText(bodyText || "[Interactive message]")}
+            </p>
+            {buttons.length > 0 && (
+              <div className={cn(
+                "mt-2 flex flex-col gap-1.5 pt-2 border-t",
+                "border-primary-foreground/20"
+              )}>
+                {buttons.map((btnText, i) => (
+                  <div 
+                    key={i} 
+                    className={cn(
+                      "flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-[13px] font-medium transition-colors cursor-default",
+                      "bg-primary-foreground/10 hover:bg-primary-foreground/20 text-primary-foreground"
+                    )}
+                  >
+                    <CornerDownLeft className="h-3.5 w-3.5 opacity-70" />
+                    {btnText}
+                  </div>
+                ))}
+              </div>
+            )}
+            {cta && (
+              <div className={cn(
+                "mt-2 flex flex-col gap-1.5 pt-2 border-t",
+                "border-primary-foreground/20"
+              )}>
+                <a 
+                  href={cta.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={cn(
+                    "flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-[13px] font-medium transition-colors hover:bg-primary-foreground/20",
+                    "bg-primary-foreground/10 text-primary-foreground"
+                  )}
+                >
+                  <ExternalLink className="h-3.5 w-3.5 opacity-70" />
+                  {cta.text}
+                </a>
+              </div>
+            )}
+          </div>
         );
       }
 
