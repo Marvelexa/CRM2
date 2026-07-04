@@ -314,9 +314,9 @@ async function findEntryFlow(
   message: ParsedInbound,
   isFirstInbound: boolean,
 ): Promise<FlowRow | null> {
-  // Only text messages can match an entry trigger. Interactive replies
-  // are responses to existing prompts; they never start a new flow.
-  if (message.kind !== "text") return null;
+  // Allow both text messages and interactive button clicks (like Quick Replies from outreach templates) 
+  // to start a new flow. When a user clicks a button, we match against the button's title or payload.
+  if (message.kind !== "text" && message.kind !== "interactive_reply") return null;
 
   // Pull all active flows for this account. Active set is bounded
   // (the builder discourages double-trigger overlap; partial index
@@ -332,8 +332,12 @@ async function findEntryFlow(
   const typed = flows as FlowRow[];
   for (const flow of typed) {
     if (flow.trigger_type === "keyword") {
+      const matchText = message.kind === "text" 
+        ? message.text 
+        : (message.reply_title || message.reply_id || "");
+
       if (matchesKeywordTrigger(
-        message.text,
+        matchText,
         flow.trigger_config as KeywordTriggerConfig,
       )) {
         return flow;
