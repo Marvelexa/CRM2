@@ -163,12 +163,18 @@ export function MessageActions({
 
 function MessageInfoContent({ message }: { message: Message }) {
   const sentTime = format(new Date(message.created_at), "PPpp");
+  
+  // Backwards compatibility for older messages sent before tracking columns were added
+  const isRead = message.status === 'read';
+  const isDelivered = message.status === 'delivered' || isRead;
+
   const deliveredTime = message.delivered_at 
     ? format(new Date(message.delivered_at), "PPpp") 
-    : null;
+    : (isDelivered ? "Yes (time unavailable)" : "Pending...");
+    
   const readTime = message.read_at 
     ? format(new Date(message.read_at), "PPpp") 
-    : null;
+    : (isRead ? "Yes (time unavailable)" : "Not read yet");
 
   return (
     <div className="flex flex-col gap-3 font-sans">
@@ -189,23 +195,19 @@ function MessageInfoContent({ message }: { message: Message }) {
 
         {/* Delivered */}
         <div className="flex items-start gap-2">
-          <CheckCheck className={cn("h-4 w-4 mt-0.5", deliveredTime ? "text-muted-foreground" : "text-muted-foreground/30")} />
+          <CheckCheck className={cn("h-4 w-4 mt-0.5", message.delivered_at || isDelivered ? "text-muted-foreground" : "text-muted-foreground/30")} />
           <div className="flex flex-col">
             <span className="font-medium text-foreground">Delivered</span>
-            <span className="text-[10px] text-muted-foreground">
-              {deliveredTime ? deliveredTime : "Pending..."}
-            </span>
+            <span className="text-[10px] text-muted-foreground">{deliveredTime}</span>
           </div>
         </div>
 
         {/* Read */}
         <div className="flex items-start gap-2">
-          <CheckCheck className={cn("h-4 w-4 mt-0.5", readTime ? "text-blue-500" : "text-muted-foreground/30")} />
+          <CheckCheck className={cn("h-4 w-4 mt-0.5", message.read_at || isRead ? "text-blue-500" : "text-muted-foreground/30")} />
           <div className="flex flex-col">
             <span className="font-medium text-foreground">Read (Saw)</span>
-            <span className="text-[10px] text-muted-foreground">
-              {readTime ? readTime : "Not read yet"}
-            </span>
+            <span className="text-[10px] text-muted-foreground">{readTime}</span>
           </div>
         </div>
       </div>
