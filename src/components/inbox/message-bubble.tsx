@@ -160,7 +160,7 @@ function TemplateMessageContent({ message }: { message: Message }) {
       const supabase = createClient();
       const { data } = await supabase
         .from("message_templates")
-        .select("buttons")
+        .select("buttons, footer_text")
         .eq("name", message.template_name)
         .limit(1)
         .maybeSingle();
@@ -205,6 +205,14 @@ function TemplateMessageContent({ message }: { message: Message }) {
       {message.content_text && (
         <p className="mt-1 whitespace-pre-wrap break-words text-sm">
           {formatWhatsAppText(message.content_text)}
+        </p>
+      )}
+      {template?.footer_text && (
+        <p className={cn(
+          "mt-1.5 text-xs opacity-70",
+          isAgent ? "text-primary-foreground" : "text-muted-foreground"
+        )}>
+          {template.footer_text}
         </p>
       )}
       {template?.buttons && template.buttons.length > 0 && (
