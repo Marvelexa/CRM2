@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { CornerUpLeft, Copy, SmilePlus } from "lucide-react";
+import { CornerUpLeft, Copy, SmilePlus, Info, Check, CheckCheck } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { format } from "date-fns";
 import {
   Popover,
   PopoverContent,
@@ -125,6 +126,22 @@ export function MessageActions({
             ))}
           </PopoverContent>
         </Popover>
+        {isAgent && (
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                className="flex h-5 w-5 items-center justify-center rounded-full text-popover-foreground hover:bg-muted hover:text-foreground"
+                aria-label="Message Info"
+              >
+                <Info className="h-3.5 w-3.5" />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-64 p-3 text-xs" side="top" align="end">
+              <MessageInfoContent message={message} />
+            </PopoverContent>
+          </Popover>
+        )}
         <button
           type="button"
           onClick={handleReply}
@@ -142,6 +159,58 @@ export function MessageActions({
           <Copy className="h-3.5 w-3.5" />
         </button>
       </div>
+      </div>
+    </div>
+  );
+}
+
+function MessageInfoContent({ message }: { message: Message }) {
+  const sentTime = format(new Date(message.created_at), "PPpp");
+  const deliveredTime = message.delivered_at 
+    ? format(new Date(message.delivered_at), "PPpp") 
+    : null;
+  const readTime = message.read_at 
+    ? format(new Date(message.read_at), "PPpp") 
+    : null;
+
+  return (
+    <div className="flex flex-col gap-3 font-sans">
+      <h4 className="font-semibold text-sm border-b pb-1.5 flex items-center gap-1.5 text-foreground">
+        <Info className="h-4 w-4 text-primary" />
+        Message Info
+      </h4>
+      
+      <div className="flex flex-col gap-2">
+        {/* Sent */}
+        <div className="flex items-start gap-2">
+          <Check className="h-4 w-4 text-muted-foreground mt-0.5" />
+          <div className="flex flex-col">
+            <span className="font-medium text-foreground">Sent</span>
+            <span className="text-[10px] text-muted-foreground">{sentTime}</span>
+          </div>
+        </div>
+
+        {/* Delivered */}
+        <div className="flex items-start gap-2">
+          <CheckCheck className={cn("h-4 w-4 mt-0.5", deliveredTime ? "text-muted-foreground" : "text-muted-foreground/30")} />
+          <div className="flex flex-col">
+            <span className="font-medium text-foreground">Delivered</span>
+            <span className="text-[10px] text-muted-foreground">
+              {deliveredTime ? deliveredTime : "Pending..."}
+            </span>
+          </div>
+        </div>
+
+        {/* Read */}
+        <div className="flex items-start gap-2">
+          <CheckCheck className={cn("h-4 w-4 mt-0.5", readTime ? "text-blue-500" : "text-muted-foreground/30")} />
+          <div className="flex flex-col">
+            <span className="font-medium text-foreground">Read (Saw)</span>
+            <span className="text-[10px] text-muted-foreground">
+              {readTime ? readTime : "Not read yet"}
+            </span>
+          </div>
+        </div>
       </div>
     </div>
   );

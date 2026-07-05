@@ -339,12 +339,30 @@ async function handleStatusUpdate(status: {
   recipient_id: string
   errors?: any[]
 }) {
+  const tsIso = new Date(parseInt(status.timestamp) * 1000).toISOString()
+  const updatePayload: Record<string, any> = { status: status.status }
+  
+  if (status.status === 'delivered') {
+    updatePayload.delivered_at = tsIso
+  } else if (status.status === 'read') {
+    updatePayload.read_at = tsIso
+  }
+
   // 1) Mirror onto messages (legacy behavior) — Meta's status values
   //    already match the CHECK constraint on messages.status.
-  const { error: msgErr } = await supabaseAdmin()
+  let { error: msgErr } = await supabaseAdmin()
     .from('messages')
-    .update({ status: status.status })
+    .update(updatePayload)
     .eq('message_id', status.id)
+
+  // Fallback for backwards compatibility if table is not migrated yet
+  if (msgErr && msgErr.message?.includes('column')) {
+    const { error: fallbackErr } = await supabaseAdmin()
+      .from('messages')
+      .update({ status: status.status })
+      .eq('message_id', status.id)
+    msgErr = fallbackErr
+  }
 
   if (msgErr) {
     console.error('Error updating message status:', msgErr)
