@@ -128,14 +128,11 @@ export function MessageActions({
         </Popover>
         {isAgent && (
           <Popover>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                className="flex h-5 w-5 items-center justify-center rounded-full text-popover-foreground hover:bg-muted hover:text-foreground"
-                aria-label="Message Info"
-              >
-                <Info className="h-3.5 w-3.5" />
-              </button>
+            <PopoverTrigger
+              className="flex h-5 w-5 items-center justify-center rounded-full text-popover-foreground hover:bg-muted hover:text-foreground"
+              aria-label="Message Info"
+            >
+              <Info className="h-3.5 w-3.5" />
             </PopoverTrigger>
             <PopoverContent className="w-64 p-3 text-xs" side="top" align="end">
               <MessageInfoContent message={message} />
