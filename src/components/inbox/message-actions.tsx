@@ -39,6 +39,7 @@ export function MessageActions({
   // interacts elsewhere.
   const [touchOpen, setTouchOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
 
   const isAgent =
     message.sender_type === "agent" || message.sender_type === "bot";
@@ -84,7 +85,11 @@ export function MessageActions({
         isAgent ? "justify-end" : "justify-start",
       )}
       onContextMenu={handleContextMenu}
-      onBlur={() => setTouchOpen(false)}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+          setTouchOpen(false);
+        }
+      }}
     >
       {/* `min-w-0` lets this flex child actually respect the 75% cap.
        *  Default `min-width: auto` lets content (a long quote preview,
@@ -94,7 +99,7 @@ export function MessageActions({
       <div className="group/actions relative min-w-0 max-w-[75%]">
         {children}
       <div
-        data-touch-open={touchOpen || pickerOpen ? "true" : undefined}
+        data-touch-open={touchOpen || pickerOpen || infoOpen ? "true" : undefined}
         className={cn(
           "absolute -top-3 z-10 flex h-7 items-center gap-0.5 rounded-full border border-border bg-popover/95 px-1 shadow-md backdrop-blur-sm transition-opacity",
           "opacity-0 group-hover/actions:opacity-100 group-focus-within/actions:opacity-100",
@@ -127,7 +132,7 @@ export function MessageActions({
           </PopoverContent>
         </Popover>
         {isAgent && (
-          <Popover>
+          <Popover open={infoOpen} onOpenChange={setInfoOpen}>
             <PopoverTrigger
               className="flex h-5 w-5 items-center justify-center rounded-full text-popover-foreground hover:bg-muted hover:text-foreground"
               aria-label="Message Info"
@@ -161,7 +166,7 @@ export function MessageActions({
   );
 }
 
-function MessageInfoContent({ message }: { message: Message }) {
+export function MessageInfoContent({ message }: { message: Message }) {
   const sentTime = format(new Date(message.created_at), "PPpp");
   
   // Backwards compatibility for older messages sent before tracking columns were added

@@ -346,6 +346,18 @@ async function handleStatusUpdate(status: {
     updatePayload.delivered_at = tsIso
   } else if (status.status === 'read') {
     updatePayload.read_at = tsIso
+    try {
+      const { data: existingMsg } = await supabaseAdmin()
+        .from('messages')
+        .select('delivered_at')
+        .eq('message_id', status.id)
+        .maybeSingle()
+      if (!existingMsg?.delivered_at) {
+        updatePayload.delivered_at = new Date((parseInt(status.timestamp) - 1) * 1000).toISOString()
+      }
+    } catch (e) {
+      // Ignore query errors, fallback to setting read_at only
+    }
   }
 
   // 1) Mirror onto messages (legacy behavior) — Meta's status values
