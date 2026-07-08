@@ -630,7 +630,6 @@ async function advanceFromNodeKey(
         let whatsapp_message_id = '';
         
         if (textToSend.includes("Your information has been submitted successfully")) {
-          const { engineSendInteractiveButtons } = await import("./meta-send");
           const finalBodyText = textToSend + "\n\nPortfolio: https://nexvora-ud88.onrender.com";
           const res = await engineSendInteractiveButtons({
             accountId: run.account_id,

@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
 import { getMediaUrl, downloadMedia, sendTextMessage, sendInteractiveCtaUrl } from '@/lib/whatsapp/meta-api'
@@ -163,6 +163,15 @@ export async function GET(request: Request) {
   }
 }
 
+function runInBackground(promise: Promise<any>) {
+  if (typeof (globalThis as any).waitUntil === 'function') {
+    (globalThis as any).waitUntil(promise);
+  } else {
+    // Fallback if not on Vercel/NextJS request context supporting waitUntil
+    promise.catch((err) => console.error('Background execution failed:', err));
+  }
+}
+
 // POST - Receive messages
 export async function POST(request: Request) {
   // Read raw body first so we can HMAC-verify the exact bytes Meta
@@ -192,12 +201,12 @@ export async function POST(request: Request) {
             .update({ last_registration_error: null })
             .eq('id', configExists.id)
             
-          // Proceed with processing
-          try {
-            await processWebhook(parsedBody)
-          } catch (error) {
-            console.error('Error processing webhook in signature bypass fallback:', error)
-          }
+          // Proceed with processing in background
+          runInBackground(
+            processWebhook(parsedBody).catch((error) => {
+              console.error('Error processing webhook in signature bypass fallback:', error)
+            })
+          )
           return NextResponse.json({ status: 'received' }, { status: 200 })
         } else {
           console.warn(`[webhook] signature verification failed and phoneId ${phoneId} was not found in database configs.`)
@@ -216,15 +225,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  // Process synchronously so Vercel Serverless doesn't kill the execution context
-  // before the database operations finish. Meta allows ~20s timeout, and this
-  // usually takes <1s.
-  try {
-    await processWebhook(body)
-  } catch (error) {
-    console.error('Error processing webhook:', error)
-  }
-
+  // Process in the background using runInBackground so Vercel keeps the lambda execution context alive
+  // while returning 200 OK instantly to WhatsApp.
+  runInBackground(
+    processWebhook(body).catch((error) => {
+      console.error('Error processing webhook in background:', error)
+    })
+  )
+  
   return NextResponse.json({ status: 'received' }, { status: 200 })
 }
 
