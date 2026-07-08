@@ -820,13 +820,20 @@ Detected Country: ${detectedCountry}`;
     const isInterested = lastCustomerMsg && lastCustomerMsg.content_text && lastCustomerMsg.content_text.toLowerCase().includes('interested');
     if (isInterested) {
       try {
+        const isLoanPlus = accountId === '6b428da4-3ce6-47aa-8002-53296da16e9a';
+        const bodyText = isLoanPlus
+          ? 'Aap hamari banking services aur profile dekhne ke liye humari website visit kar sakte hain!'
+          : 'You can visit our portfolio to see our recent work!';
+        const buttonText = isLoanPlus ? 'Visit Website' : 'Visit on our Website';
+        const url = isLoanPlus ? 'https://loan-plus.onrender.com' : 'https://nexvora-ud88.onrender.com';
+
         const ctaResult = await sendInteractiveCtaUrl({
           phoneNumberId,
           accessToken,
           to: contact.phone,
-          bodyText: 'You can visit our portfolio to see our recent work!',
-          buttonText: 'Visit on our Website',
-          url: 'https://nexvora-ud88.onrender.com'
+          bodyText,
+          buttonText,
+          url
         })
         
         await supabaseAdmin()
@@ -835,7 +842,7 @@ Detected Country: ${detectedCountry}`;
             conversation_id: conversation.id,
             sender_type: 'bot',
             content_type: 'interactive',
-            content_text: 'You can visit our portfolio to see our recent work!',
+            content_text: bodyText,
             message_id: ctaResult.messageId,
             status: 'sent',
           })
@@ -843,7 +850,7 @@ Detected Country: ${detectedCountry}`;
         await supabaseAdmin()
           .from('conversations')
           .update({
-            last_message_text: 'You can visit our portfolio to see our recent work!',
+            last_message_text: bodyText,
             last_message_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           })

@@ -331,19 +331,25 @@ async function findEntryFlow(
 
   const typed = flows as FlowRow[];
   for (const flow of typed) {
-    if (flow.trigger_type === "keyword") {
-      const matchText = message.kind === "text" 
-        ? message.text 
-        : (message.reply_title || message.reply_id || "");
+    const matchText = message.kind === "text" 
+      ? message.text 
+      : (message.reply_title || message.reply_id || "");
 
+    if (flow.trigger_type === "keyword") {
       if (matchesKeywordTrigger(
         matchText,
         flow.trigger_config as KeywordTriggerConfig,
       )) {
         return flow;
       }
-    } else if (flow.trigger_type === "first_inbound_message" && isFirstInbound) {
-      return flow;
+    } else if (flow.trigger_type === "first_inbound_message") {
+      const isOutreachReply = matchesKeywordTrigger(matchText, {
+        keywords: ["interested", "yes", "start", "join", "loan", "hi", "hello", "namaste", "வணக்கம்", "નમસ્તે"],
+        match_type: "contains"
+      });
+      if (isFirstInbound || isOutreachReply) {
+        return flow;
+      }
     }
     // 'manual' triggers do not auto-start from inbound messages.
   }
