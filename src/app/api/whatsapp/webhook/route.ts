@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server'
+// @ts-ignore
+import { NextRequest, NextResponse, waitUntil } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
 import { getMediaUrl, downloadMedia, sendTextMessage, sendInteractiveCtaUrl } from '@/lib/whatsapp/meta-api'
@@ -164,11 +165,17 @@ export async function GET(request: Request) {
 }
 
 function runInBackground(promise: Promise<any>) {
-  if (typeof (globalThis as any).waitUntil === 'function') {
-    (globalThis as any).waitUntil(promise);
-  } else {
-    // Fallback if not on Vercel/NextJS request context supporting waitUntil
-    promise.catch((err) => console.error('Background execution failed:', err));
+  try {
+    if (typeof waitUntil === 'function') {
+      waitUntil(promise);
+    } else if (typeof (globalThis as any).waitUntil === 'function') {
+      (globalThis as any).waitUntil(promise);
+    } else {
+      promise.catch((err) => console.error('Background execution failed (no waitUntil):', err));
+    }
+  } catch (err) {
+    console.error('Failed to trigger waitUntil:', err);
+    promise.catch((e) => console.error('Background execution fallback promise failed:', e));
   }
 }
 
