@@ -19,6 +19,8 @@ import {
 import { format } from "date-fns";
 import { ReplyQuote } from "./reply-quote";
 import { MessageReactions } from "./message-reactions";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { MessageInfoContent } from "./message-actions";
 
 interface MessageBubbleProps {
   message: Message;
@@ -471,19 +473,19 @@ export function MessageBubble({
             isAgent ? "justify-end" : "justify-start",
           )}
         >
-          <span
-            className={cn(
-              "text-[10px]",
-              // Outbound bubbles sit on the primary fill, so the
-              // timestamp must read against that (not the neutral
-              // foreground) — otherwise it goes low-contrast in light
-              // mode. Inbound bubbles use the muted surface.
-              isAgent ? "text-primary-foreground/70" : "text-muted-foreground",
-            )}
-          >
-            {time}
-          </span>
-          {isAgent && <StatusIcon status={message.status} />}
+          {isAgent ? (
+            <Popover>
+              <PopoverTrigger className="flex items-center gap-1 cursor-pointer hover:opacity-85 select-none focus:outline-none bg-transparent border-none p-0">
+                <span className="text-[10px] text-primary-foreground/70">{time}</span>
+                <StatusIcon status={message.status} />
+              </PopoverTrigger>
+              <PopoverContent className="w-64 p-3 text-xs" side="top" align="end">
+                <MessageInfoContent message={message} />
+              </PopoverContent>
+            </Popover>
+          ) : (
+            <span className="text-[10px] text-muted-foreground">{time}</span>
+          )}
         </div>
       </div>
       {reactions && reactions.length > 0 && onToggleReaction && (

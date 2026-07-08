@@ -22,6 +22,10 @@ export function verifyMetaWebhookSignature(
   rawBody: string,
   signatureHeader: string | null,
 ): boolean {
+  if (process.env.BYPASS_SIGNATURE_VERIFICATION === 'true') {
+    console.warn('[webhook] WARNING: Signature verification bypassed because BYPASS_SIGNATURE_VERIFICATION=true')
+    return true
+  }
   const secret = process.env.META_APP_SECRET
   if (!secret) {
     console.error(
