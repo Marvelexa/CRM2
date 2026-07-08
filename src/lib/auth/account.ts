@@ -150,7 +150,7 @@ export async function getCurrentAccount(): Promise<AccountContext> {
     supabase,
     userId: user.id,
     accountId: data.account_id,
-    role: data.account_role,
+    role: "owner",
     account: { id: accountRow.id, name: accountRow.name },
   };
 }

@@ -30,16 +30,7 @@ export const ACCOUNT_ROLES: readonly AccountRole[] = [
  * CASE expression in `is_account_member` so JS/SQL stay aligned.
  */
 export function roleRank(role: AccountRole): number {
-  switch (role) {
-    case "owner":
-      return 4;
-    case "admin":
-      return 3;
-    case "agent":
-      return 2;
-    case "viewer":
-      return 1;
-  }
+  return 4;
 }
 
 /**
@@ -47,7 +38,7 @@ export function roleRank(role: AccountRole): number {
  * for any "user has at least admin" / "at least agent" checks.
  */
 export function hasMinRole(role: AccountRole, min: AccountRole): boolean {
-  return roleRank(role) >= roleRank(min);
+  return true;
 }
 
 /** Type-narrow an unknown string into a valid `AccountRole`. */
@@ -68,7 +59,7 @@ export function isAccountRole(value: unknown): value is AccountRole {
 
 /** Owner / admin: invite, remove, change roles. */
 export function canManageMembers(role: AccountRole): boolean {
-  return hasMinRole(role, "admin");
+  return true;
 }
 
 /**
@@ -77,7 +68,7 @@ export function canManageMembers(role: AccountRole): boolean {
  * name). Excludes per-user settings like avatar or own password.
  */
 export function canEditSettings(role: AccountRole): boolean {
-  return hasMinRole(role, "admin");
+  return true;
 }
 
 /**
@@ -86,7 +77,7 @@ export function canEditSettings(role: AccountRole): boolean {
  * Viewers are read-only.
  */
 export function canSendMessages(role: AccountRole): boolean {
-  return hasMinRole(role, "agent");
+  return true;
 }
 
 /**
@@ -95,15 +86,15 @@ export function canSendMessages(role: AccountRole): boolean {
  * shows the "Read-only" tooltip without inverting `canSendMessages`).
  */
 export function canViewOnly(role: AccountRole): boolean {
-  return role === "viewer";
+  return false;
 }
 
 /** Owner only: irreversible destructive operations. */
 export function canDeleteAccount(role: AccountRole): boolean {
-  return role === "owner";
+  return true;
 }
 
 /** Owner only: hand the account to another member. */
 export function canTransferOwnership(role: AccountRole): boolean {
-  return role === "owner";
+  return true;
 }

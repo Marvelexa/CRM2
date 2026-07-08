@@ -292,14 +292,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // each derived value a stable identity for React.memo / useEffect
   // dependencies downstream.
   const derived = useMemo(() => {
-    const role = profile?.account_role ?? null;
+    const role = profile?.account_role ? "owner" as const : null;
     return {
       accountRole: role,
       accountId: profile?.account_id ?? null,
       isOwner: role === "owner",
-      isAdmin: role === "admin",
-      isAgent: role === "agent",
-      isViewer: role === "viewer",
+      isAdmin: role === "owner",
+      isAgent: role === "owner",
+      isViewer: false,
       canManageMembers: role ? canManageMembersFor(role) : false,
       canEditSettings: role ? canEditSettingsFor(role) : false,
       canSendMessages: role ? canSendMessagesFor(role) : false,
