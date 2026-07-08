@@ -367,10 +367,10 @@ async function sendButtonsAndSuspend(
     userId: run.user_id,
     conversationId: run.conversation_id!,
     contactId: run.contact_id!,
-    bodyText: cfg.text,
-    headerText: cfg.header_text,
-    footerText: cfg.footer_text,
-    buttons: cfg.buttons.map((b) => ({ id: b.reply_id, title: b.title })),
+    bodyText: interpolateVars(cfg.text, run.vars),
+    headerText: cfg.header_text ? interpolateVars(cfg.header_text, run.vars) : undefined,
+    footerText: cfg.footer_text ? interpolateVars(cfg.footer_text, run.vars) : undefined,
+    buttons: cfg.buttons.map((b) => ({ id: b.reply_id, title: interpolateVars(b.title, run.vars) })),
   });
   await logEvent(db, run.id, "message_sent", node.node_key, {
     node_type: "send_buttons",
@@ -403,16 +403,16 @@ async function sendListAndSuspend(
     userId: run.user_id,
     conversationId: run.conversation_id!,
     contactId: run.contact_id!,
-    bodyText: cfg.text,
-    buttonLabel: cfg.button_label,
-    headerText: cfg.header_text,
-    footerText: cfg.footer_text,
+    bodyText: interpolateVars(cfg.text, run.vars),
+    buttonLabel: interpolateVars(cfg.button_label, run.vars),
+    headerText: cfg.header_text ? interpolateVars(cfg.header_text, run.vars) : undefined,
+    footerText: cfg.footer_text ? interpolateVars(cfg.footer_text, run.vars) : undefined,
     sections: cfg.sections.map((s) => ({
-      title: s.title,
+      title: s.title ? interpolateVars(s.title, run.vars) : undefined,
       rows: s.rows.map((r) => ({
         id: r.reply_id,
-        title: r.title,
-        description: r.description,
+        title: interpolateVars(r.title, run.vars),
+        description: r.description ? interpolateVars(r.description, run.vars) : undefined,
       })),
     })),
   });
@@ -1121,12 +1121,45 @@ async function handleReplyForActiveRun(
   return { consumed: true, flow_run_id: run.id, outcome: "completed" };
 }
 
+function generateNextThreeDates(): Record<string, string> {
+  const vars: Record<string, string> = {};
+  const now = new Date();
+  for (let i = 1; i <= 3; i++) {
+    const d = new Date(now);
+    d.setDate(now.getDate() + i);
+    
+    const day = String(d.getDate()).padStart(2, '0');
+    const monthStr = String(d.getMonth() + 1).padStart(2, '0');
+    vars[`date_${i}_num`] = `${day}/${monthStr}`;
+    
+    // English: e.g. 10 Jul
+    const dayNameEN = d.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
+    vars[`date_${i}_en`] = dayNameEN;
+    
+    // Hindi: e.g. 10 जुलाई
+    const monthsHI = ["जनवरी", "फरवरी", "मार्च", "अप्रैल", "मई", "जून", "जुलाई", "अगस्त", "सितंबर", "अक्टूबर", "नवंबर", "दिसंबर"];
+    vars[`date_${i}_hi`] = `${d.getDate()} ${monthsHI[d.getMonth()]}`;
+    
+    // Gujarati: e.g. 10 જુલાઈ
+    const monthsGU = ["જાન્યુઆરી", "ફેબ્રુઆરી", "માર્ચ", "એપ્રિલ", "મે", "જૂન", "જુલાઈ", "ઓગસ્ટ", "સપ્ટેમ્બર", "ઓક્ટોબર", "નવેમ્બર", "ડિસેમ્બર"];
+    vars[`date_${i}_gu`] = `${d.getDate()} ${monthsGU[d.getMonth()]}`;
+    
+    // Tamil: e.g. 10 ஜூலை
+    const monthsTA = ["ஜனவரி", "பிப்ரவரி", "மார்ச்", "ஏப்ரல்", "மே", "ஜூன்", "ஜூலை", "ஆகஸ்ட்", "செப்டம்பர்", "அக்டோபர்", "நவம்பர்", "டிசம்பர்"];
+    vars[`date_${i}_ta`] = `${d.getDate()} ${monthsTA[d.getMonth()]}`;
+  }
+  return vars;
+}
+
 async function startNewRun(
   db: AdminClient,
   flow: FlowRow,
   input: DispatchInboundInput,
   nodes: Map<string, FlowNodeRow>,
 ): Promise<DispatchInboundResult> {
+  // Pre-populate vars with next three dynamic dates
+  const dynamicDates = generateNextThreeDates();
+
   // INSERT — partial unique index `idx_one_active_run_per_contact`
   // catches concurrent inserts with 23505. We catch and return as
   // consumed:true (the parallel webhook handles it).
@@ -1146,6 +1179,7 @@ async function startNewRun(
       conversation_id: input.conversationId,
       status: "active",
       current_node_key: flow.entry_node_id,
+      vars: dynamicDates,
     })
     .select("*")
     .maybeSingle();
