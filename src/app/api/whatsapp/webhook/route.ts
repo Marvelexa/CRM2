@@ -694,24 +694,26 @@ async function handleOutreachFlow(args: {
 
   const saveAndSend = async (text: string, messageId: string, contentType = 'text') => {
     try {
-      await supabaseAdmin()
-        .from('messages')
-        .insert({
-          conversation_id: conversation.id,
-          sender_type: 'bot',
-          content_type: contentType,
-          content_text: text,
-          message_id: messageId,
-          status: 'sent',
-        });
-      await supabaseAdmin()
-        .from('conversations')
-        .update({
-          last_message_text: text,
-          last_message_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', conversation.id);
+      await Promise.all([
+        supabaseAdmin()
+          .from('messages')
+          .insert({
+            conversation_id: conversation.id,
+            sender_type: 'bot',
+            content_type: contentType,
+            content_text: text,
+            message_id: messageId,
+            status: 'sent',
+          }),
+        supabaseAdmin()
+          .from('conversations')
+          .update({
+            last_message_text: text,
+            last_message_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', conversation.id),
+      ]);
     } catch (e) {
       console.error('[webhook] Error saving outreach flow reply:', e);
     }
@@ -734,7 +736,7 @@ async function handleOutreachFlow(args: {
           { id: 'not_interested', title: 'Not interested' }
         ]
       });
-      await saveAndSend(bodyText, btnResult.messageId, 'interactive');
+      saveAndSend(bodyText, btnResult.messageId, 'interactive');
 
       const ctaBody = 'Or explore our live designs and portfolio online right now:';
       const ctaResult = await sendInteractiveCtaUrl({
@@ -745,7 +747,7 @@ async function handleOutreachFlow(args: {
         buttonText: 'Visit Portfolio',
         url: 'https://nexvora-ud88.onrender.com'
       });
-      await saveAndSend(ctaBody, ctaResult.messageId, 'interactive');
+      saveAndSend(ctaBody, ctaResult.messageId, 'interactive');
     } catch (err) {
       console.error('[webhook] Error in Get Pricing flow:', err);
     }
@@ -762,7 +764,7 @@ async function handleOutreachFlow(args: {
         to: contactRecord.phone,
         text: replyText
       });
-      await saveAndSend(replyText, txtResult.messageId);
+      saveAndSend(replyText, txtResult.messageId);
 
       const ctaResult = await sendInteractiveCtaUrl({
         phoneNumberId,
@@ -772,7 +774,7 @@ async function handleOutreachFlow(args: {
         buttonText: "Visit Portfolio",
         url: "https://nexvora-ud88.onrender.com"
       });
-      await saveAndSend("Visit Portfolio: https://nexvora-ud88.onrender.com", ctaResult.messageId, 'interactive');
+      saveAndSend("Visit Portfolio: https://nexvora-ud88.onrender.com", ctaResult.messageId, 'interactive');
     } catch (err) {
       console.error('[webhook] Error in Choose Package flow:', err);
     }
@@ -794,7 +796,7 @@ async function handleOutreachFlow(args: {
           { id: 'not_interested', title: 'Not interested' }
         ]
       });
-      await saveAndSend(aboutText, btnResult.messageId, 'interactive');
+      saveAndSend(aboutText, btnResult.messageId, 'interactive');
 
       const ctaResult = await sendInteractiveCtaUrl({
         phoneNumberId,
@@ -804,7 +806,7 @@ async function handleOutreachFlow(args: {
         buttonText: "Visit Portfolio",
         url: "https://nexvora-ud88.onrender.com"
       });
-      await saveAndSend("Portfolio Link: https://nexvora-ud88.onrender.com", ctaResult.messageId, 'interactive');
+      saveAndSend("Portfolio Link: https://nexvora-ud88.onrender.com", ctaResult.messageId, 'interactive');
     } catch (err) {
       console.error('[webhook] Error in About Us flow:', err);
     }
@@ -821,7 +823,7 @@ async function handleOutreachFlow(args: {
         to: contactRecord.phone,
         text: replyText
       });
-      await saveAndSend(replyText, txtResult.messageId);
+      saveAndSend(replyText, txtResult.messageId);
     } catch (err) {
       console.error('[webhook] Error in Not Interested flow:', err);
     }
@@ -838,7 +840,7 @@ async function handleOutreachFlow(args: {
         to: contactRecord.phone,
         text: replyText
       });
-      await saveAndSend(replyText, txtResult.messageId);
+      saveAndSend(replyText, txtResult.messageId);
     } catch (err) {
       console.error('[webhook] Error in Customize Mine flow:', err);
     }
@@ -872,7 +874,7 @@ async function handleOutreachFlow(args: {
           { id: 'not_interested', title: 'Not interested' }
         ]
       });
-      await saveAndSend(bodyText, btnResult.messageId, 'interactive');
+      saveAndSend(bodyText, btnResult.messageId, 'interactive');
 
       const ctaBody = 'Or visit our portfolio right now:';
       const ctaResult = await sendInteractiveCtaUrl({
@@ -883,7 +885,7 @@ async function handleOutreachFlow(args: {
         buttonText: 'Visit Portfolio',
         url: 'https://nexvora-ud88.onrender.com'
       });
-      await saveAndSend(ctaBody, ctaResult.messageId, 'interactive');
+      saveAndSend(ctaBody, ctaResult.messageId, 'interactive');
     } catch (err) {
       console.error('[webhook] Error in Customize Business Name flow:', err);
     }
@@ -1217,46 +1219,31 @@ async function processMessage(
     .eq('sender_type', 'customer')
   const isFirstInboundMessage = (priorCustomerMsgCount ?? 0) === 0
 
-  const { error: msgError } = await supabaseAdmin().from('messages').insert({
-    conversation_id: conversation.id,
-    sender_type: 'customer',
-    content_type: contentType,
-    content_text: contentText,
-    media_url: mediaUrl,
-    message_id: message.id,
-    status: 'delivered',
-    created_at: new Date(parseInt(message.timestamp) * 1000).toISOString(),
-    reply_to_message_id: replyToInternalId,
-    // Only populated for content_type='interactive'. Migration 010 added
-    // the column; null for every other content_type so existing inserts
-    // behave identically.
-    interactive_reply_id: interactiveReplyId,
-  })
-
-  if (msgError) {
-    console.error('Error inserting message:', msgError)
-    return
-  }
-
-  // Update conversation
-  const { error: convError } = await supabaseAdmin()
-    .from('conversations')
-    .update({
-      last_message_text: contentText || `[${message.type}]`,
-      last_message_at: new Date().toISOString(),
-      unread_count: (conversation.unread_count || 0) + 1,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', conversation.id)
-
-  if (convError) {
-    console.error('Error updating conversation:', convError)
-  }
-
-  // If this contact was a recent broadcast recipient, flag the reply
-  // so the broadcast's `replied_count` advances (via the aggregate
-  // trigger installed in migration 003).
-  await flagBroadcastReplyIfAny(accountId, contactRecord.id)
+  // Parallelize message insertion, conversation update, and broadcast flag check
+  await Promise.all([
+    supabaseAdmin().from('messages').insert({
+      conversation_id: conversation.id,
+      sender_type: 'customer',
+      content_type: contentType,
+      content_text: contentText,
+      media_url: mediaUrl,
+      message_id: message.id,
+      status: 'delivered',
+      created_at: new Date(parseInt(message.timestamp) * 1000).toISOString(),
+      reply_to_message_id: replyToInternalId,
+      interactive_reply_id: interactiveReplyId,
+    }),
+    supabaseAdmin()
+      .from('conversations')
+      .update({
+        last_message_text: contentText || `[${message.type}]`,
+        last_message_at: new Date().toISOString(),
+        unread_count: (conversation.unread_count || 0) + 1,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', conversation.id),
+    flagBroadcastReplyIfAny(accountId, contactRecord.id)
+  ]);
 
   // ============================================================
   // Flow runner dispatch.
