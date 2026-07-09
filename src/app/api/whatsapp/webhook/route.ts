@@ -14,6 +14,10 @@ import {
 import { generateAIReply } from '@/lib/ai/reply-generator'
 
 
+// In-memory caches to bypass database lookups on every incoming webhook message
+const webhookConfigCache = new Map<string, { config: any, expiresAt: number }>();
+const contactConvCache = new Map<string, { contact: any, conversation: any, expiresAt: number }>();
+
 // Lazy-initialized to avoid build-time crash when env vars are missing
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let _adminClient: any = null
@@ -270,15 +274,44 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
 
       const phoneNumberId = value.metadata.phone_number_id
 
-      // Find user's config by phone_number_id. `.single()` returns
-      // PGRST116 for both 0 rows AND ≥2 rows — distinguish them so
-      // operators see the real cause in logs. ≥2 rows shouldn't happen
-      // post-migration 013 (UNIQUE constraint), but a row created
-      // before the constraint, or a race, would still surface here.
-      const { data: configRows, error: configError } = await supabaseAdmin()
-        .from('whatsapp_config')
-        .select('*')
-        .eq('phone_number_id', phoneNumberId)
+      // Check in-memory cache for whatsapp_config first (5 min TTL)
+      let config: any = null
+      const nowTs = Date.now()
+      const cachedConfig = webhookConfigCache.get(phoneNumberId)
+      if (cachedConfig && cachedConfig.expiresAt > nowTs) {
+        config = cachedConfig.config
+      } else {
+        const { data: configRows, error: configError } = await supabaseAdmin()
+          .from('whatsapp_config')
+          .select('*')
+          .eq('phone_number_id', phoneNumberId)
+
+        if (configError) {
+          console.error(
+            'Error fetching whatsapp_config for phone_number_id:',
+            phoneNumberId,
+            configError
+          )
+          continue
+        }
+
+        if (!configRows || configRows.length === 0) {
+          console.error('No config found for phone_number_id:', phoneNumberId)
+          continue
+        }
+
+        if (configRows.length > 1) {
+          console.error(
+            `Multiple configs (${configRows.length}) found for phone_number_id:`,
+            phoneNumberId,
+            '— inbound message dropped.'
+          )
+          continue
+        }
+
+        config = configRows[0]
+        webhookConfigCache.set(phoneNumberId, { config, expiresAt: nowTs + 300_000 })
+      }
 
       if (configError) {
         console.error(
@@ -1526,6 +1559,21 @@ async function findOrCreateContact(
   phone: string,
   name: string
 ): Promise<ContactOutcome | null> {
+  const cacheKey = `${accountId}:${phone}`
+  const nowTs = Date.now()
+  const cached = contactConvCache.get(cacheKey)
+  if (cached && cached.expiresAt > nowTs && cached.contact) {
+    if (name && name !== cached.contact.name) {
+      cached.contact.name = name
+      supabaseAdmin()
+        .from('contacts')
+        .update({ name, updated_at: new Date().toISOString() })
+        .eq('id', cached.contact.id)
+        .then()
+    }
+    return { contact: cached.contact, wasCreated: false }
+  }
+
   // Find an existing contact for this account by phone. The shared
   // helper pre-filters in SQL by the last-8-digit suffix (so we don't
   // pull every contact on every inbound message) then applies the
@@ -1546,6 +1594,9 @@ async function findOrCreateContact(
         .update({ name, updated_at: new Date().toISOString() })
         .eq('id', existingContact.id)
     }
+    const cacheKey = `${accountId}:${phone}`
+    const cached = contactConvCache.get(cacheKey) || { contact: null, conversation: null, expiresAt: 0 }
+    contactConvCache.set(cacheKey, { ...cached, contact: existingContact, expiresAt: Date.now() + 120_000 })
     return { contact: existingContact, wasCreated: false }
   }
 
@@ -1577,6 +1628,9 @@ async function findOrCreateContact(
     return null
   }
 
+  const cacheKey = `${accountId}:${newContact.phone}`
+  const cached = contactConvCache.get(cacheKey) || { contact: null, conversation: null, expiresAt: 0 }
+  contactConvCache.set(cacheKey, { ...cached, contact: newContact, expiresAt: Date.now() + 120_000 })
   return { contact: newContact, wasCreated: true }
 }
 
@@ -1585,6 +1639,14 @@ async function findOrCreateConversation(
   configOwnerUserId: string,
   contactId: string,
 ) {
+  // Check if we have conversation cached by contactId
+  const nowTs = Date.now()
+  for (const [key, value] of contactConvCache.entries()) {
+    if (value.contact && value.contact.id === contactId && value.conversation && value.expiresAt > nowTs) {
+      return value.conversation
+    }
+  }
+
   // Look for existing conversation in this account
   const { data: existing, error: findError } = await supabaseAdmin()
     .from('conversations')
@@ -1594,6 +1656,11 @@ async function findOrCreateConversation(
     .single()
 
   if (!findError && existing) {
+    for (const [key, value] of contactConvCache.entries()) {
+      if (value.contact && value.contact.id === contactId) {
+        contactConvCache.set(key, { ...value, conversation: existing, expiresAt: Date.now() + 120_000 })
+      }
+    }
     return existing
   }
 
@@ -1612,6 +1679,12 @@ async function findOrCreateConversation(
   if (createError) {
     console.error('Error creating conversation:', createError)
     return null
+  }
+
+  for (const [key, value] of contactConvCache.entries()) {
+    if (value.contact && value.contact.id === contactId) {
+      contactConvCache.set(key, { ...value, conversation: newConv, expiresAt: Date.now() + 120_000 })
+    }
   }
 
   return newConv
