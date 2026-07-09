@@ -1,7 +1,7 @@
 import { NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
-import { getMediaUrl, downloadMedia, sendTextMessage, sendInteractiveCtaUrl } from '@/lib/whatsapp/meta-api'
+import { getMediaUrl, downloadMedia, sendTextMessage, sendInteractiveCtaUrl, sendInteractiveButtons } from '@/lib/whatsapp/meta-api'
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
@@ -626,6 +626,273 @@ async function isBotMutedForContact(supabase: any, contactId: string): Promise<b
   return !!data && data.length > 0
 }
 
+function detectCountryFromPhone(phone: string): string {
+  const phoneStr = (phone || '').replace(/\D/g, '');
+  if (phoneStr.startsWith("91")) return "India";
+  if (phoneStr.startsWith("1")) return "United States/Canada";
+  if (phoneStr.startsWith("44")) return "United Kingdom";
+  if (phoneStr.startsWith("61")) return "Australia";
+  if (phoneStr.startsWith("64")) return "New Zealand";
+  if (phoneStr.startsWith("65")) return "Singapore";
+  if (phoneStr.startsWith("971")) return "UAE";
+  if (phoneStr.startsWith("966")) return "Saudi Arabia";
+  if (phoneStr.startsWith("974")) return "Qatar";
+  if (phoneStr.startsWith("968")) return "Oman";
+  if (phoneStr.startsWith("965")) return "Kuwait";
+  if (phoneStr.startsWith("973")) return "Bahrain";
+  if (phoneStr.startsWith("60")) return "Malaysia";
+  if (phoneStr.startsWith("66")) return "Thailand";
+  if (phoneStr.startsWith("63")) return "Philippines";
+  if (phoneStr.startsWith("62")) return "Indonesia";
+  if (phoneStr.startsWith("84")) return "Vietnam";
+  if (phoneStr.startsWith("81")) return "Japan";
+  if (phoneStr.startsWith("82")) return "South Korea";
+  if (phoneStr.startsWith("55")) return "Brazil";
+  if (phoneStr.startsWith("52")) return "Mexico";
+  if (phoneStr.startsWith("27")) return "South Africa";
+  if (phoneStr.startsWith("90")) return "Türkiye";
+  return "International";
+}
+
+function getCountryPricingSummary(country: string): string {
+  switch (country) {
+    case "India":
+      return `*💎 Starter - ₹8,999*\n• Up to 5 Premium Pages, Mobile & Tablet Optimized\n• Contact Form & WhatsApp Chat Button\n• Basic SEO & SSL Security Setup\n• 30 Days Free Support\n\n*🚀 Growth - ₹19,999 (Most Popular)*\n• Up to 15 Pages + Product/Service Catalog\n• Advanced UI/UX & Premium Animations\n• Lead Capture Forms & Analytics\n• Speed & Image Optimization\n• 60 Days Free Support\n\n*🛍️ Professional - ₹39,999*\n• Full E-commerce / Booking System\n• Secure Checkout & Payment Gateway\n• Customer Login & Management System\n• 90 Days Free Support\n\n*👑 Enterprise - ₹69,999+*\n• Custom UI/UX, AI Chatbot & CRM Integration`;
+    case "United Kingdom":
+      return `*💎 Starter - £249*\n• Up to 5 Premium Pages, Mobile Optimized\n\n*🚀 Growth - £499 (Most Popular)*\n• Up to 15 Pages, Animations, Lead Capture, Analytics\n\n*🛍️ Professional - £849*\n• Full E-commerce / Booking System\n\n*👑 Enterprise - £1,299+*\n• Custom UI/UX, AI Chatbot & CRM Integration`;
+    case "Australia":
+    case "New Zealand":
+      return `*💎 Starter - A$449*\n• Up to 5 Premium Pages, Mobile Optimized\n\n*🚀 Growth - A$899 (Most Popular)*\n• Up to 15 Pages, Animations, Lead Capture, Analytics\n\n*🛍️ Professional - A$1,499*\n• Full E-commerce / Booking System\n\n*👑 Enterprise - A$2,199+*\n• Custom UI/UX, AI Chatbot & CRM Integration`;
+    case "UAE":
+    case "Saudi Arabia":
+    case "Qatar":
+    case "Kuwait":
+    case "Bahrain":
+    case "Oman":
+      return `*💎 Starter - AED 1,499*\n• Up to 5 Premium Pages, Mobile Optimized\n\n*🚀 Growth - AED 2,499 (Most Popular)*\n• Up to 15 Pages, Animations, Lead Capture, Analytics\n\n*🛍️ Professional - AED 3,999*\n• Full E-commerce / Booking System\n\n*👑 Enterprise - AED 6,999+*\n• Custom UI/UX, AI Chatbot & CRM Integration`;
+    default:
+      return `*💎 Starter - $299*\n• Up to 5 Premium Pages, Mobile & Tablet Optimized\n• Contact Form & WhatsApp Chat Button\n• Basic SEO & SSL Security Setup\n• 30 Days Free Support\n\n*🚀 Growth - $599 (Most Popular)*\n• Up to 15 Pages + Product/Service Catalog\n• Advanced UI/UX & Premium Animations\n• Lead Capture Forms & Analytics\n• Speed & Image Optimization\n• 60 Days Free Support\n\n*🛍️ Professional - $999*\n• Full E-commerce / Booking System\n• Secure Checkout & Payment Gateway\n• Customer Login & Management System\n• 90 Days Free Support\n\n*👑 Enterprise - $1,500+*\n• Custom UI/UX, AI Chatbot & CRM Integration`;
+  }
+}
+
+async function handleOutreachFlow(args: {
+  accountId: string
+  conversation: any
+  contactRecord: any
+  inboundText: string
+  interactiveReplyId: string | null
+  accessToken: string
+  phoneNumberId: string
+}): Promise<boolean> {
+  const { accountId, conversation, contactRecord, inboundText, interactiveReplyId, accessToken, phoneNumberId } = args;
+  
+  // Only execute this flow for Nexvora / non-LoanPlus accounts
+  if (accountId === '6b428da4-3ce6-47aa-8002-53296da16e9a') return false;
+
+  const triggerInput = (interactiveReplyId || inboundText || '').trim().toLowerCase();
+  const detectedCountry = detectCountryFromPhone(contactRecord.phone);
+
+  const saveAndSend = async (text: string, messageId: string, contentType = 'text') => {
+    try {
+      await supabaseAdmin()
+        .from('messages')
+        .insert({
+          conversation_id: conversation.id,
+          sender_type: 'bot',
+          content_type: contentType,
+          content_text: text,
+          message_id: messageId,
+          status: 'sent',
+        });
+      await supabaseAdmin()
+        .from('conversations')
+        .update({
+          last_message_text: text,
+          last_message_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', conversation.id);
+    } catch (e) {
+      console.error('[webhook] Error saving outreach flow reply:', e);
+    }
+  };
+
+  // 1) Get Pricing button clicked or requested
+  if (/^(get pricing|pricing|price|view pricing|how much)$/i.test(triggerInput)) {
+    const pricingSummary = getCountryPricingSummary(detectedCountry);
+    const bodyText = `Here are our transparent investment packages tailored for your business in *${detectedCountry}*:\n\n${pricingSummary}\n\nPlease select an option below to proceed:`;
+    
+    try {
+      const btnResult = await sendInteractiveButtons({
+        phoneNumberId,
+        accessToken,
+        to: contactRecord.phone,
+        bodyText,
+        buttons: [
+          { id: 'choose_package', title: 'Choose Package' },
+          { id: 'about_us', title: 'About Us' },
+          { id: 'not_interested', title: 'Not interested' }
+        ]
+      });
+      await saveAndSend(bodyText, btnResult.messageId, 'interactive');
+
+      const ctaBody = 'Or explore our live designs and portfolio online right now:';
+      const ctaResult = await sendInteractiveCtaUrl({
+        phoneNumberId,
+        accessToken,
+        to: contactRecord.phone,
+        bodyText: ctaBody,
+        buttonText: 'Visit Portfolio',
+        url: 'https://nexvora-ud88.onrender.com'
+      });
+      await saveAndSend(ctaBody, ctaResult.messageId, 'interactive');
+    } catch (err) {
+      console.error('[webhook] Error in Get Pricing flow:', err);
+    }
+    return true;
+  }
+
+  // 2) Choose Package / Price button clicked
+  if (/^(choose_package|choose package|select package|select plan|proceed|interested|starter|growth|professional|enterprise)$/i.test(triggerInput)) {
+    const replyText = "Thank you so much for your interest! 🙏✨\n\nOur expert team will connect with you very soon to discuss your specific requirements, finalize your package, and get your premium website live in record time!\n\nIn the meantime, feel free to explore our live design concepts and portfolio below:";
+    try {
+      const txtResult = await sendTextMessage({
+        phoneNumberId,
+        accessToken,
+        to: contactRecord.phone,
+        text: replyText
+      });
+      await saveAndSend(replyText, txtResult.messageId);
+
+      const ctaResult = await sendInteractiveCtaUrl({
+        phoneNumberId,
+        accessToken,
+        to: contactRecord.phone,
+        bodyText: "Check out our live portfolio while our expert connects with you:",
+        buttonText: "Visit Portfolio",
+        url: "https://nexvora-ud88.onrender.com"
+      });
+      await saveAndSend("Visit Portfolio: https://nexvora-ud88.onrender.com", ctaResult.messageId, 'interactive');
+    } catch (err) {
+      console.error('[webhook] Error in Choose Package flow:', err);
+    }
+    return true;
+  }
+
+  // 3) About Us clicked -> AI answers it + gives options
+  if (/^(about_us|about us|about nexvora|who are you)$/i.test(triggerInput)) {
+    const aboutText = "At *Nexvora*, founded by *Prince R Pandey*, we are an elite digital design and web engineering agency with *2+ years of experience* and over *20+ premium projects* delivered globally. ✨🚀\n\nWe specialize in transforming digital storefronts with ultra-modern animations, lightning-fast performance, and high-converting UX/UI tailored specifically to your brand to turn your visitors into paying customers.\n\nWhat would you like to explore next?";
+    try {
+      const btnResult = await sendInteractiveButtons({
+        phoneNumberId,
+        accessToken,
+        to: contactRecord.phone,
+        bodyText: aboutText,
+        buttons: [
+          { id: 'pricing', title: 'Get Pricing' },
+          { id: 'customize', title: 'Customize Mine' },
+          { id: 'not_interested', title: 'Not interested' }
+        ]
+      });
+      await saveAndSend(aboutText, btnResult.messageId, 'interactive');
+
+      const ctaResult = await sendInteractiveCtaUrl({
+        phoneNumberId,
+        accessToken,
+        to: contactRecord.phone,
+        bodyText: "Explore our recent agency work on our portfolio:",
+        buttonText: "Visit Portfolio",
+        url: "https://nexvora-ud88.onrender.com"
+      });
+      await saveAndSend("Portfolio Link: https://nexvora-ud88.onrender.com", ctaResult.messageId, 'interactive');
+    } catch (err) {
+      console.error('[webhook] Error in About Us flow:', err);
+    }
+    return true;
+  }
+
+  // 4) Not interested clicked
+  if (/^(not_interested|not interested|no thanks|no needed)$/i.test(triggerInput)) {
+    const replyText = "Thank you so much for your honest feedback! 🙏\n\nWe are constantly working to improve our services and designs. We will always be right here whenever you need us in the future for any website or digital solutions.\n\nWishing you and your business immense success and growth ahead! 😊🌟";
+    try {
+      const txtResult = await sendTextMessage({
+        phoneNumberId,
+        accessToken,
+        to: contactRecord.phone,
+        text: replyText
+      });
+      await saveAndSend(replyText, txtResult.messageId);
+    } catch (err) {
+      console.error('[webhook] Error in Not Interested flow:', err);
+    }
+    return true;
+  }
+
+  // 5) Customize Mine clicked
+  if (/^(customize|customize mine|customise|customise mine)$/i.test(triggerInput)) {
+    const replyText = "Thank you for your interest in customizing your website! ✨🚀\n\nTo begin setting up your personalized design and features, could you please tell us the exact *Name of your Business*?";
+    try {
+      const txtResult = await sendTextMessage({
+        phoneNumberId,
+        accessToken,
+        to: contactRecord.phone,
+        text: replyText
+      });
+      await saveAndSend(replyText, txtResult.messageId);
+    } catch (err) {
+      console.error('[webhook] Error in Customize Mine flow:', err);
+    }
+    return true;
+  }
+
+  // 6) Customer answers with their Business Name (after bot asked for "Name of your Business")
+  const { data: lastBotMessages } = await supabaseAdmin()
+    .from('messages')
+    .select('content_text')
+    .eq('conversation_id', conversation.id)
+    .eq('sender_type', 'bot')
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  const lastBotMsgText = lastBotMessages && lastBotMessages.length > 0 ? (lastBotMessages[0].content_text || '') : (conversation.last_message_text || '');
+  if (/name of your business/i.test(lastBotMsgText) && inboundText.trim().length > 0) {
+    const businessName = inboundText.trim();
+    const pricingSummary = getCountryPricingSummary(detectedCountry);
+    const bodyText = `Thank you for sharing, *${businessName}*! We would love to build and customize your dream website. ✨\n\nHere are our transparent pricing packages tailored for your business in *${detectedCountry}*:\n\n${pricingSummary}\n\nPlease select an option below to proceed:`;
+    
+    try {
+      const btnResult = await sendInteractiveButtons({
+        phoneNumberId,
+        accessToken,
+        to: contactRecord.phone,
+        bodyText,
+        buttons: [
+          { id: 'choose_package', title: 'Choose Package' },
+          { id: 'about_us', title: 'About Us' },
+          { id: 'not_interested', title: 'Not interested' }
+        ]
+      });
+      await saveAndSend(bodyText, btnResult.messageId, 'interactive');
+
+      const ctaBody = 'Or visit our portfolio right now:';
+      const ctaResult = await sendInteractiveCtaUrl({
+        phoneNumberId,
+        accessToken,
+        to: contactRecord.phone,
+        bodyText: ctaBody,
+        buttonText: 'Visit Portfolio',
+        url: 'https://nexvora-ud88.onrender.com'
+      });
+      await saveAndSend(ctaBody, ctaResult.messageId, 'interactive');
+    } catch (err) {
+      console.error('[webhook] Error in Customize Business Name flow:', err);
+    }
+    return true;
+  }
+
+  return false;
+}
+
 async function handleAIAutoReply(
   conversation: any,
   contact: any,
@@ -654,30 +921,7 @@ async function handleAIAutoReply(
       .join('\n')
 
     const phoneStr = contact.phone || '';
-    let detectedCountry = "Unknown";
-    if (phoneStr.startsWith("91")) detectedCountry = "India";
-    else if (phoneStr.startsWith("1")) detectedCountry = "United States/Canada";
-    else if (phoneStr.startsWith("44")) detectedCountry = "United Kingdom";
-    else if (phoneStr.startsWith("61")) detectedCountry = "Australia";
-    else if (phoneStr.startsWith("64")) detectedCountry = "New Zealand";
-    else if (phoneStr.startsWith("65")) detectedCountry = "Singapore";
-    else if (phoneStr.startsWith("971")) detectedCountry = "UAE";
-    else if (phoneStr.startsWith("966")) detectedCountry = "Saudi Arabia";
-    else if (phoneStr.startsWith("974")) detectedCountry = "Qatar";
-    else if (phoneStr.startsWith("968")) detectedCountry = "Oman";
-    else if (phoneStr.startsWith("965")) detectedCountry = "Kuwait";
-    else if (phoneStr.startsWith("973")) detectedCountry = "Bahrain";
-    else if (phoneStr.startsWith("60")) detectedCountry = "Malaysia";
-    else if (phoneStr.startsWith("66")) detectedCountry = "Thailand";
-    else if (phoneStr.startsWith("63")) detectedCountry = "Philippines";
-    else if (phoneStr.startsWith("62")) detectedCountry = "Indonesia";
-    else if (phoneStr.startsWith("84")) detectedCountry = "Vietnam";
-    else if (phoneStr.startsWith("81")) detectedCountry = "Japan";
-    else if (phoneStr.startsWith("82")) detectedCountry = "South Korea";
-    else if (phoneStr.startsWith("55")) detectedCountry = "Brazil";
-    else if (phoneStr.startsWith("52")) detectedCountry = "Mexico";
-    else if (phoneStr.startsWith("27")) detectedCountry = "South Africa";
-    else if (phoneStr.startsWith("90")) detectedCountry = "Türkiye";
+    const detectedCountry = detectCountryFromPhone(phoneStr);
 
     // 2) Define system instruction (prompt) based on account tenancy
     const accountId = conversation.account_id;
@@ -1033,7 +1277,20 @@ async function processMessage(
   // no active flows take the runner's early-exit "no_match" path
   // basically for free (one indexed SELECT for the active run).
   // ============================================================
-  const flowResult = await dispatchInboundToFlows({
+  let outreachConsumed = false;
+  if (accountId !== '6b428da4-3ce6-47aa-8002-53296da16e9a') {
+    outreachConsumed = await handleOutreachFlow({
+      accountId,
+      conversation,
+      contactRecord,
+      inboundText: contentText ?? message.text?.body ?? '',
+      interactiveReplyId,
+      accessToken,
+      phoneNumberId
+    });
+  }
+
+  const flowResult = !outreachConsumed ? await dispatchInboundToFlows({
     accountId,
     userId: configOwnerUserId,
     contactId: contactRecord.id,
@@ -1052,8 +1309,8 @@ async function processMessage(
             meta_message_id: message.id,
           },
     isFirstInboundMessage,
-  })
-  const flowConsumed = flowResult.consumed
+  }) : { consumed: true };
+  const flowConsumed = outreachConsumed || flowResult.consumed
 
   // Fire any automations that react to this webhook event. All dispatches
   // run here (not earlier) so the contact, conversation, and inbound

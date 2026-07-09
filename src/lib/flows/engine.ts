@@ -38,6 +38,8 @@ import {
   engineSendInteractiveList,
   engineSendMedia,
   engineSendText,
+  buildCachedContext,
+  type CachedSendContext,
 } from "./meta-send";
 import { decideFallback, resolveFallbackPolicy } from "./fallback";
 import {
@@ -244,7 +246,13 @@ async function loadAllNodes(
   return map;
 }
 
-async function logEvent(
+/**
+ * Fire-and-forget event logger. Returns void immediately so the
+ * advance loop never blocks on an INSERT to the audit table.
+ * Errors are caught and logged — a failed event write must never
+ * stall the customer-facing flow.
+ */
+function logEvent(
   db: AdminClient,
   flowRunId: string,
   event_type:
@@ -259,17 +267,15 @@ async function logEvent(
     | "completed",
   node_key: string | null,
   payload: Record<string, unknown> = {},
-): Promise<void> {
-  const { error } = await db.from("flow_run_events").insert({
+): void {
+  db.from("flow_run_events").insert({
     flow_run_id: flowRunId,
     event_type,
     node_key,
     payload,
+  }).then(({ error }) => {
+    if (error) console.error("[flows] logEvent error:", error.message);
   });
-  if (error) {
-    // Logging failure is non-fatal — surface but don't throw.
-    console.error("[flows] logEvent error:", error.message);
-  }
 }
 
 /**
@@ -366,6 +372,7 @@ async function sendButtonsAndSuspend(
   db: AdminClient,
   run: FlowRunRow,
   node: FlowNodeRow,
+  cached?: CachedSendContext,
 ): Promise<{ outcome: "advanced"; node_key: string }> {
   const cfg = node.config as unknown as SendButtonsNodeConfig;
   const { whatsapp_message_id } = await engineSendInteractiveButtons({
@@ -377,24 +384,23 @@ async function sendButtonsAndSuspend(
     headerText: cfg.header_text ? interpolateVars(cfg.header_text, run.vars) : undefined,
     footerText: cfg.footer_text ? interpolateVars(cfg.footer_text, run.vars) : undefined,
     buttons: cfg.buttons.map((b) => ({ id: b.reply_id, title: interpolateVars(b.title, run.vars) })),
+    cached,
   });
-  await logEvent(db, run.id, "message_sent", node.node_key, {
+  logEvent(db, run.id, "message_sent", node.node_key, {
     node_type: "send_buttons",
     whatsapp_message_id,
   });
-  // Look up our internal message id so we can stash it on the run.
-  // Cheap — indexed on `messages.message_id`.
-  const { data: msg } = await db
-    .from("messages")
+  // Fire-and-forget: stash last_prompt_message_id asynchronously.
+  db.from("messages")
     .select("id")
     .eq("message_id", whatsapp_message_id)
-    .maybeSingle();
-  await db
-    .from("flow_runs")
-    .update({
-      last_prompt_message_id: (msg as { id: string } | null)?.id ?? null,
-    })
-    .eq("id", run.id);
+    .maybeSingle()
+    .then(({ data: msg }) => {
+      db.from("flow_runs")
+        .update({ last_prompt_message_id: (msg as { id: string } | null)?.id ?? null })
+        .eq("id", run.id)
+        .then(() => {});
+    });
   return { outcome: "advanced", node_key: node.node_key };
 }
 
@@ -402,6 +408,7 @@ async function sendListAndSuspend(
   db: AdminClient,
   run: FlowRunRow,
   node: FlowNodeRow,
+  cached?: CachedSendContext,
 ): Promise<{ outcome: "advanced"; node_key: string }> {
   const cfg = node.config as unknown as SendListNodeConfig;
   const { whatsapp_message_id } = await engineSendInteractiveList({
@@ -421,22 +428,23 @@ async function sendListAndSuspend(
         description: r.description ? interpolateVars(r.description, run.vars) : undefined,
       })),
     })),
+    cached,
   });
-  await logEvent(db, run.id, "message_sent", node.node_key, {
+  logEvent(db, run.id, "message_sent", node.node_key, {
     node_type: "send_list",
     whatsapp_message_id,
   });
-  const { data: msg } = await db
-    .from("messages")
+  // Fire-and-forget: stash last_prompt_message_id asynchronously.
+  db.from("messages")
     .select("id")
     .eq("message_id", whatsapp_message_id)
-    .maybeSingle();
-  await db
-    .from("flow_runs")
-    .update({
-      last_prompt_message_id: (msg as { id: string } | null)?.id ?? null,
-    })
-    .eq("id", run.id);
+    .maybeSingle()
+    .then(({ data: msg }) => {
+      db.from("flow_runs")
+        .update({ last_prompt_message_id: (msg as { id: string } | null)?.id ?? null })
+        .eq("id", run.id)
+        .then(() => {});
+    });
   return { outcome: "advanced", node_key: node.node_key };
 }
 
@@ -457,7 +465,7 @@ async function executeHandoff(
       .update(convUpdate)
       .eq("id", run.conversation_id);
   }
-  await logEvent(db, run.id, "handoff", node.node_key, {
+  logEvent(db, run.id, "handoff", node.node_key, {
     note: cfg.note ?? null,
     assigned_to: cfg.assign_to ?? null,
   });
@@ -559,13 +567,14 @@ async function advanceFromNodeKey(
   run: FlowRunRow,
   startNodeKey: string,
   nodes: Map<string, FlowNodeRow>,
+  cached?: CachedSendContext,
 ): Promise<{ outcome: "advanced" | "completed" | "handed_off" }> {
   let currentKey: string | null = startNodeKey;
   // Defensive cap — if a flow has a cycle (which the validator
   // SHOULD catch but doesn't yet in v1), we bail rather than loop.
   for (let safety = 0; safety < 64; safety += 1) {
     if (!currentKey) {
-      await logEvent(db, run.id, "error", null, {
+      logEvent(db, run.id, "error", null, {
         reason: "next_node_key was null mid-advance",
       });
       await endRun(db, run.id, "failed", "missing_next_node");
@@ -573,13 +582,13 @@ async function advanceFromNodeKey(
     }
     const node: FlowNodeRow | null = nodes.get(currentKey) ?? null;
     if (!node) {
-      await logEvent(db, run.id, "error", currentKey, {
+      logEvent(db, run.id, "error", currentKey, {
         reason: "node_not_found",
       });
       await endRun(db, run.id, "failed", "node_not_found");
       return { outcome: "completed" };
     }
-    await logEvent(db, run.id, "node_entered", node.node_key, {
+    logEvent(db, run.id, "node_entered", node.node_key, {
       node_type: node.node_type,
     });
 
@@ -637,7 +646,8 @@ async function advanceFromNodeKey(
             conversationId: run.conversation_id!,
             contactId: run.contact_id!,
             bodyText: finalBodyText,
-            buttons: [{ id: 'about_nexvora', title: 'About Nexvora' }]
+            buttons: [{ id: 'about_nexvora', title: 'About Nexvora' }],
+            cached,
           });
           whatsapp_message_id = res.whatsapp_message_id;
         } else {
@@ -647,16 +657,17 @@ async function advanceFromNodeKey(
             conversationId: run.conversation_id!,
             contactId: run.contact_id!,
             text: textToSend,
+            cached,
           });
           whatsapp_message_id = res.whatsapp_message_id;
         }
         
-        await logEvent(db, run.id, "message_sent", node.node_key, {
+        logEvent(db, run.id, "message_sent", node.node_key, {
           node_type: "send_message",
           whatsapp_message_id,
         });
       } catch (err) {
-        await logEvent(db, run.id, "error", node.node_key, {
+        logEvent(db, run.id, "error", node.node_key, {
           reason: "send_text_failed",
           detail: err instanceof Error ? err.message : String(err),
         });
@@ -680,14 +691,15 @@ async function advanceFromNodeKey(
             ? interpolateVars(cfg.caption, run.vars)
             : undefined,
           filename: cfg.filename,
+          cached,
         });
-        await logEvent(db, run.id, "message_sent", node.node_key, {
+        logEvent(db, run.id, "message_sent", node.node_key, {
           node_type: "send_media",
           media_type: cfg.media_type,
           whatsapp_message_id,
         });
       } catch (err) {
-        await logEvent(db, run.id, "error", node.node_key, {
+        logEvent(db, run.id, "error", node.node_key, {
           reason: "send_media_failed",
           detail: err instanceof Error ? err.message : String(err),
         });
@@ -704,28 +716,29 @@ async function advanceFromNodeKey(
       try {
         const { whatsapp_message_id } = await engineSendText({
           accountId: run.account_id,
-    userId: run.user_id,
+          userId: run.user_id,
           conversationId: run.conversation_id!,
           contactId: run.contact_id!,
           text: interpolateVars(cfg.prompt_text, run.vars),
+          cached,
         });
-        await logEvent(db, run.id, "message_sent", node.node_key, {
+        logEvent(db, run.id, "message_sent", node.node_key, {
           node_type: "collect_input",
           whatsapp_message_id,
         });
-        const { data: msg } = await db
-          .from("messages")
+        // Fire-and-forget: stash last_prompt_message_id
+        db.from("messages")
           .select("id")
           .eq("message_id", whatsapp_message_id)
-          .maybeSingle();
-        await db
-          .from("flow_runs")
-          .update({
-            last_prompt_message_id: (msg as { id: string } | null)?.id ?? null,
-          })
-          .eq("id", run.id);
+          .maybeSingle()
+          .then(({ data: msg }) => {
+            db.from("flow_runs")
+              .update({ last_prompt_message_id: (msg as { id: string } | null)?.id ?? null })
+              .eq("id", run.id)
+              .then(() => {});
+          });
       } catch (err) {
-        await logEvent(db, run.id, "error", node.node_key, {
+        logEvent(db, run.id, "error", node.node_key, {
           reason: "collect_input_prompt_failed",
           detail: err instanceof Error ? err.message : String(err),
         });
@@ -739,7 +752,7 @@ async function advanceFromNodeKey(
         node.node_key,
       );
       if (!advanced) {
-        await logEvent(db, run.id, "error", node.node_key, {
+        logEvent(db, run.id, "error", node.node_key, {
           reason: "lost_race_during_advance",
         });
       }
@@ -753,7 +766,7 @@ async function advanceFromNodeKey(
           ? "true"
           : "false";
       } catch (err) {
-        await logEvent(db, run.id, "error", node.node_key, {
+        logEvent(db, run.id, "error", node.node_key, {
           reason: "condition_evaluation_failed",
           detail: err instanceof Error ? err.message : String(err),
         });
@@ -762,7 +775,7 @@ async function advanceFromNodeKey(
       }
       currentKey =
         branch === "true" ? cfg.true_next : cfg.false_next;
-      await logEvent(db, run.id, "node_entered", node.node_key, {
+      logEvent(db, run.id, "node_entered", node.node_key, {
         condition_result: branch,
         advancing_to: currentKey,
       });
@@ -788,7 +801,7 @@ async function advanceFromNodeKey(
       } catch (err) {
         // Non-fatal — log + advance. A tag-write failure shouldn't
         // strand the customer mid-flow.
-        await logEvent(db, run.id, "error", node.node_key, {
+        logEvent(db, run.id, "error", node.node_key, {
           reason: "set_tag_failed",
           detail: err instanceof Error ? err.message : String(err),
         });
@@ -797,7 +810,7 @@ async function advanceFromNodeKey(
       continue;
     }
     if (node.node_type === "send_buttons") {
-      await sendButtonsAndSuspend(db, run, node);
+      await sendButtonsAndSuspend(db, run, node, cached);
       // Persist the new current_node_key via optimistic UPDATE.
       const advanced = await advanceCurrentNodeKey(
         db,
@@ -806,14 +819,14 @@ async function advanceFromNodeKey(
         node.node_key,
       );
       if (!advanced) {
-        await logEvent(db, run.id, "error", node.node_key, {
+        logEvent(db, run.id, "error", node.node_key, {
           reason: "lost_race_during_advance",
         });
       }
       return { outcome: "advanced" };
     }
     if (node.node_type === "send_list") {
-      await sendListAndSuspend(db, run, node);
+      await sendListAndSuspend(db, run, node, cached);
       const advanced = await advanceCurrentNodeKey(
         db,
         run.id,
@@ -821,7 +834,7 @@ async function advanceFromNodeKey(
         node.node_key,
       );
       if (!advanced) {
-        await logEvent(db, run.id, "error", node.node_key, {
+        logEvent(db, run.id, "error", node.node_key, {
           reason: "lost_race_during_advance",
         });
       }
@@ -832,19 +845,19 @@ async function advanceFromNodeKey(
       return { outcome: "handed_off" };
     }
     if (node.node_type === "end") {
-      await logEvent(db, run.id, "completed", node.node_key);
+      logEvent(db, run.id, "completed", node.node_key);
       await endRun(db, run.id, "completed", "end_node");
       return { outcome: "completed" };
     }
     // Unknown node type — shouldn't happen given the CHECK constraint.
-    await logEvent(db, run.id, "error", node.node_key, {
+    logEvent(db, run.id, "error", node.node_key, {
       reason: `unknown_node_type:${node.node_type}`,
     });
     await endRun(db, run.id, "failed", "unknown_node_type");
     return { outcome: "completed" };
   }
   // Safety break — log + fail.
-  await logEvent(db, run.id, "error", currentKey, {
+  logEvent(db, run.id, "error", currentKey, {
     reason: "advance_loop_safety_break",
   });
   await endRun(db, run.id, "failed", "advance_loop_overflow");
@@ -920,8 +933,12 @@ export async function dispatchInboundToFlows(
       }
       // One SELECT for the whole flow's nodes — advance loop is now
       // in-memory. See loadAllNodes.
-      const nodes = await loadAllNodes(db, activeRun.flow_id);
-      return handleReplyForActiveRun(db, activeRun, input.message, nodes);
+      // Build cached context ONCE — eliminates 2 DB queries per node.
+      const [nodes, cached] = await Promise.all([
+        loadAllNodes(db, activeRun.flow_id),
+        buildCachedContext(activeRun.account_id, activeRun.contact_id!),
+      ]);
+      return handleReplyForActiveRun(db, activeRun, input.message, nodes, cached);
     }
 
     // No active run → look for a flow whose entry trigger matches.
@@ -934,8 +951,11 @@ export async function dispatchInboundToFlows(
     if (!flow || !flow.entry_node_id) {
       return { consumed: false, outcome: "no_match" };
     }
-    const nodes = await loadAllNodes(db, flow.id);
-    return startNewRun(db, flow, input, nodes);
+    const [nodes, cached] = await Promise.all([
+      loadAllNodes(db, flow.id),
+      buildCachedContext(flow.account_id, input.contactId),
+    ]);
+    return startNewRun(db, flow, input, nodes, cached);
   } catch (err) {
     console.error(
       "[flows] dispatchInboundToFlows threw:",
@@ -950,6 +970,7 @@ async function handleReplyForActiveRun(
   run: FlowRunRow,
   message: ParsedInbound,
   nodes: Map<string, FlowNodeRow>,
+  cached?: CachedSendContext,
 ): Promise<DispatchInboundResult> {
   // Note: we intentionally do NOT persist the raw customer text. A
   // `collect_input` prompt that asks "what's your card number?" would
@@ -958,7 +979,7 @@ async function handleReplyForActiveRun(
   // table. Length is enough for "did they actually reply?" debugging;
   // for the captured value itself, the `node_entered` event already
   // records `captured_key` + `captured_length` after the var is stored.
-  await logEvent(db, run.id, "reply_received", run.current_node_key, {
+  logEvent(db, run.id, "reply_received", run.current_node_key, {
     meta_message_id: message.meta_message_id,
     reply_kind: message.kind,
     reply_id: message.kind === "interactive_reply" ? message.reply_id : null,
@@ -1030,7 +1051,7 @@ async function handleReplyForActiveRun(
         // re-SELECT the whole row.
         run.vars = newVars;
         run.reprompt_count = 0;
-        await logEvent(db, run.id, "node_entered", currentNode.node_key, {
+        logEvent(db, run.id, "node_entered", currentNode.node_key, {
           captured_key: cfg.var_key,
           captured_length: captured.length,
         });
@@ -1054,7 +1075,7 @@ async function handleReplyForActiveRun(
         .eq("id", run.id);
       if (!error) run.reprompt_count = 0;
     }
-    const outcome = await advanceFromNodeKey(db, run, matched, nodes);
+    const outcome = await advanceFromNodeKey(db, run, matched, nodes, cached);
     return {
       consumed: true,
       flow_run_id: run.id,
@@ -1073,7 +1094,7 @@ async function handleReplyForActiveRun(
     .eq("id", run.id);
 
   const action = decideFallback({ policy, reprompt_count: newReprompts });
-  await logEvent(db, run.id, "fallback_fired", run.current_node_key, {
+  logEvent(db, run.id, "fallback_fired", run.current_node_key, {
     action: action.type,
     reprompt_count: newReprompts,
   });
@@ -1084,9 +1105,9 @@ async function handleReplyForActiveRun(
   if (action.type === "reprompt") {
     // Re-send the same prompt. Same node, no current_node_key change.
     if (currentNode.node_type === "send_buttons") {
-      await sendButtonsAndSuspend(db, run, currentNode);
+      await sendButtonsAndSuspend(db, run, currentNode, cached);
     } else if (currentNode.node_type === "send_list") {
-      await sendListAndSuspend(db, run, currentNode);
+      await sendListAndSuspend(db, run, currentNode, cached);
     } else if (currentNode.node_type === "collect_input") {
       // Customer typed something we couldn't accept (empty after trim,
       // or var_key missing — rare). Re-send the prompt so they try again.
@@ -1094,13 +1115,14 @@ async function handleReplyForActiveRun(
       try {
         await engineSendText({
           accountId: run.account_id,
-    userId: run.user_id,
+          userId: run.user_id,
           conversationId: run.conversation_id!,
           contactId: run.contact_id!,
+          cached,
           text: interpolateVars(cfg.prompt_text, run.vars),
         });
       } catch (err) {
-        await logEvent(db, run.id, "error", currentNode.node_key, {
+        logEvent(db, run.id, "error", currentNode.node_key, {
           reason: "reprompt_send_failed",
           detail: err instanceof Error ? err.message : String(err),
         });
@@ -1115,7 +1137,7 @@ async function handleReplyForActiveRun(
         .update({ status: "pending", updated_at: new Date().toISOString() })
         .eq("id", run.conversation_id);
     }
-    await logEvent(db, run.id, "handoff", run.current_node_key, {
+    logEvent(db, run.id, "handoff", run.current_node_key, {
       reason: "fallback_exhausted",
     });
     await endRun(db, run.id, "handed_off", "fallback_exhausted");
@@ -1161,6 +1183,7 @@ async function startNewRun(
   flow: FlowRow,
   input: DispatchInboundInput,
   nodes: Map<string, FlowNodeRow>,
+  cached?: CachedSendContext,
 ): Promise<DispatchInboundResult> {
   // Pre-populate vars with next three dynamic dates
   const dynamicDates = generateNextThreeDates();
@@ -1198,7 +1221,7 @@ async function startNewRun(
     return { consumed: false, outcome: "no_match" };
   }
   const run = inserted as FlowRunRow;
-  await logEvent(db, run.id, "started", flow.entry_node_id, {
+  logEvent(db, run.id, "started", flow.entry_node_id, {
     flow_id: flow.id,
     trigger_type: flow.trigger_type,
     meta_message_id: input.message.meta_message_id,
@@ -1220,7 +1243,7 @@ async function startNewRun(
   }
 
   // Run the advance loop starting from the entry node.
-  const outcome = await advanceFromNodeKey(db, run, flow.entry_node_id!, nodes);
+  const outcome = await advanceFromNodeKey(db, run, flow.entry_node_id!, nodes, cached);
   return {
     consumed: true,
     flow_run_id: run.id,

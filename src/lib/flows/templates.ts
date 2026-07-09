@@ -286,6 +286,108 @@ const LEAD_CAPTURE: FlowTemplate = {
 };
 
 // ============================================================
+// 4. Nexvora Price & Outreach Flow
+// ============================================================
+const NEXVORA_OUTREACH: FlowTemplate = {
+  slug: "nexvora_outreach",
+  name: "Nexvora Price & Outreach Flow",
+  description:
+    "Interactive pricing packages by country, business name customization prompt, About Us response, portfolio link CTA, and Not Interested handler.",
+  icon: "MessageSquare",
+  trigger_type: "keyword",
+  trigger_config: {
+    keywords: ["price", "pricing", "get pricing", "customize", "about us"],
+    match_type: "contains",
+  },
+  entry_node_id: "start",
+  nodes: [
+    {
+      node_key: "start",
+      node_type: "start",
+      config: { next_node_key: "welcome_price_buttons" },
+    },
+    {
+      node_key: "welcome_price_buttons",
+      node_type: "send_buttons",
+      config: {
+        text: "Welcome to Nexvora! Tap Get Pricing to reveal our country-specific packages or choose another option below.",
+        buttons: [
+          { reply_id: "pricing", title: "Get Pricing", next_node_key: "price_reveal" },
+          { reply_id: "customize", title: "Customize Mine", next_node_key: "customize_prompt" },
+          { reply_id: "about_us", title: "About Us", next_node_key: "about_us_reply" },
+        ],
+      } as SendButtonsNodeConfig,
+    },
+    {
+      node_key: "price_reveal",
+      node_type: "send_buttons",
+      config: {
+        text: "Here are our transparent investment packages tailored to your country:\n\n*💎 Starter - $299 (or ₹8,999 / £249)*\n• Up to 5 Premium Pages, Mobile Optimized\n\n*🚀 Growth - $599 (Most Popular)*\n• Up to 15 Pages, Animations, Lead Capture\n\n*🛍️ Professional - $999*\n• Full E-commerce / Booking System\n\n*👑 Enterprise - $1,500+*\n• Custom UI/UX & AI Chatbot",
+        buttons: [
+          { reply_id: "choose_package", title: 'Choose Package', next_node_key: 'choose_package_reply' },
+          { reply_id: "about_us", title: 'About Us', next_node_key: 'about_us_reply' },
+          { reply_id: "not_interested", title: 'Not interested', next_node_key: 'not_interested_reply' },
+        ],
+      } as SendButtonsNodeConfig,
+    },
+    {
+      node_key: "choose_package_reply",
+      node_type: "send_message",
+      config: {
+        text: "Thank you so much for your interest! 🙏✨ Our expert team will connect with you very soon to finalize your package.\n\nExplore our live designs right here: https://nexvora-ud88.onrender.com",
+        next_node_key: "end",
+      } as SendMessageNodeConfig,
+    },
+    {
+      node_key: "customize_prompt",
+      node_type: "collect_input",
+      config: {
+        prompt_text: "Thank you for your interest in customizing your website! ✨🚀 To begin setting up your personalized design and features, could you please tell us the exact *Name of your Business*?",
+        var_key: "business_name",
+        next_node_key: "customize_reply",
+      } as CollectInputNodeConfig,
+    },
+    {
+      node_key: "customize_reply",
+      node_type: "send_buttons",
+      config: {
+        text: "Thank you for sharing, *{{vars.business_name}}*! We would love to build and customize your dream website. ✨\n\nHere are our transparent pricing packages tailored for your business:\n\n*💎 Starter - $299*\n*🚀 Growth - $599 (Most Popular)*\n*🛍️ Professional - $999*\n*👑 Enterprise - $1,500+*\n\nPlease select an option below:",
+        buttons: [
+          { reply_id: "choose_package", title: 'Choose Package', next_node_key: 'choose_package_reply' },
+          { reply_id: "about_us", title: 'About Us', next_node_key: 'about_us_reply' },
+          { reply_id: "not_interested", title: 'Not interested', next_node_key: 'not_interested_reply' },
+        ],
+      } as SendButtonsNodeConfig,
+    },
+    {
+      node_key: "about_us_reply",
+      node_type: "send_buttons",
+      config: {
+        text: "At *Nexvora*, founded by *Prince R Pandey*, we are an elite digital design and web engineering agency with *2+ years of experience* and over *20+ premium projects* delivered globally. ✨🚀\n\nWhat would you like to explore next?",
+        buttons: [
+          { reply_id: "pricing", title: 'Get Pricing', next_node_key: 'price_reveal' },
+          { reply_id: "customize", title: 'Customize Mine', next_node_key: 'customize_prompt' },
+          { reply_id: "not_interested", title: 'Not interested', next_node_key: 'not_interested_reply' },
+        ],
+      } as SendButtonsNodeConfig,
+    },
+    {
+      node_key: "not_interested_reply",
+      node_type: "send_message",
+      config: {
+        text: "Thank you so much for your honest feedback! 🙏\n\nWe are constantly working to improve our services and designs. We will always be right here whenever you need us in the future for any website or digital solutions.\n\nWishing you and your business immense success and growth ahead! 😊🌟",
+        next_node_key: "end",
+      } as SendMessageNodeConfig,
+    },
+    {
+      node_key: "end",
+      node_type: "end",
+      config: {},
+    },
+  ],
+};
+
+// ============================================================
 // Registry
 // ============================================================
 
@@ -293,6 +395,7 @@ const TEMPLATES: Record<string, FlowTemplate> = {
   welcome_menu: WELCOME_MENU,
   faq_bot: FAQ_BOT,
   lead_capture: LEAD_CAPTURE,
+  nexvora_outreach: NEXVORA_OUTREACH,
 };
 
 export function getFlowTemplate(slug: string): FlowTemplate | null {
