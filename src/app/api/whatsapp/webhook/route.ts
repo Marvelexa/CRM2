@@ -313,32 +313,7 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
         webhookConfigCache.set(phoneNumberId, { config, expiresAt: nowTs + 300_000 })
       }
 
-      if (configError) {
-        console.error(
-          'Error fetching whatsapp_config for phone_number_id:',
-          phoneNumberId,
-          configError
-        )
-        continue
-      }
-
-      if (!configRows || configRows.length === 0) {
-        console.error('No config found for phone_number_id:', phoneNumberId)
-        continue
-      }
-
-      if (configRows.length > 1) {
-        console.error(
-          `Multiple configs (${configRows.length}) found for phone_number_id:`,
-          phoneNumberId,
-          '— inbound message dropped. Resolve duplicates so each number maps to a single account.',
-          'Account owners:',
-          configRows.map((r: { account_id: string; user_id: string }) => `${r.account_id} (admin ${r.user_id})`)
-        )
-        continue
-      }
-
-      const config = configRows[0]
+      if (!config) continue
 
       const decryptedAccessToken = decrypt(config.access_token)
 
@@ -1594,9 +1569,8 @@ async function findOrCreateContact(
         .update({ name, updated_at: new Date().toISOString() })
         .eq('id', existingContact.id)
     }
-    const cacheKey = `${accountId}:${phone}`
-    const cached = contactConvCache.get(cacheKey) || { contact: null, conversation: null, expiresAt: 0 }
-    contactConvCache.set(cacheKey, { ...cached, contact: existingContact, expiresAt: Date.now() + 120_000 })
+    const existingEntry = contactConvCache.get(cacheKey) || { contact: null, conversation: null, expiresAt: 0 }
+    contactConvCache.set(cacheKey, { ...existingEntry, contact: existingContact, expiresAt: Date.now() + 120_000 })
     return { contact: existingContact, wasCreated: false }
   }
 
@@ -1628,9 +1602,9 @@ async function findOrCreateContact(
     return null
   }
 
-  const cacheKey = `${accountId}:${newContact.phone}`
-  const cached = contactConvCache.get(cacheKey) || { contact: null, conversation: null, expiresAt: 0 }
-  contactConvCache.set(cacheKey, { ...cached, contact: newContact, expiresAt: Date.now() + 120_000 })
+  const newKey = `${accountId}:${newContact.phone}`
+  const newEntry = contactConvCache.get(newKey) || { contact: null, conversation: null, expiresAt: 0 }
+  contactConvCache.set(newKey, { ...newEntry, contact: newContact, expiresAt: Date.now() + 120_000 })
   return { contact: newContact, wasCreated: true }
 }
 
