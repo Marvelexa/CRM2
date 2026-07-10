@@ -152,6 +152,15 @@ export async function POST(request: Request) {
 
     const accessToken = decrypt(config.access_token)
 
+    let effectiveTemplateName = template_name;
+    let effectiveTemplateLanguage = template_language || 'en_US';
+    const oldOutreachTemplates = ['website_outreach_soft', 'website_outreach_video', 'website_outreach'];
+    if (accountId === 'fe7c308b-d9c0-49b5-af12-362f5620757a' && oldOutreachTemplates.includes(effectiveTemplateName)) {
+      effectiveTemplateName = 'nexvora_last_hope';
+      effectiveTemplateLanguage = 'en';
+      console.log(`[whatsapp/broadcast] Intercepted old outreach template '${template_name}' -> rewriting to 'nexvora_last_hope'`);
+    }
+
     // Load the template row once so sendTemplateMessage can build
     // header + button components on each iteration. Loading inside
     // the loop would N+1 against Supabase for every recipient.
@@ -161,8 +170,8 @@ export async function POST(request: Request) {
       .from('message_templates')
       .select('*')
       .eq('account_id', accountId)
-      .eq('name', template_name)
-      .eq('language', template_language || 'en_US')
+      .eq('name', effectiveTemplateName)
+      .eq('language', effectiveTemplateLanguage)
       .maybeSingle()
     if (rawTemplateRow && !isMessageTemplate(rawTemplateRow)) {
       return NextResponse.json(
@@ -197,6 +206,7 @@ export async function POST(request: Request) {
       const variants = phoneVariants(sanitized)
       let sentMessageId: string | null = null
       let lastError: string | null = null
+      let successfulVariant = sanitized
 
       for (const variant of variants) {
         try {
@@ -204,13 +214,14 @@ export async function POST(request: Request) {
             phoneNumberId: config.phone_number_id,
             accessToken,
             to: variant,
-            templateName: template_name,
-            language: template_language || 'en_US',
+            templateName: effectiveTemplateName,
+            language: templateRow?.language || effectiveTemplateLanguage || 'en_US',
             template: templateRow ?? undefined,
             messageParams: recipient.messageParams,
             params: recipient.params ?? [],
           })
           sentMessageId = result.messageId
+          successfulVariant = variant
           lastError = null
           break
         } catch (error) {
@@ -240,7 +251,7 @@ export async function POST(request: Request) {
             .from('contacts')
             .select('id, user_id, account_id')
             .eq('account_id', accountId)
-            .eq('phone', variant)
+            .eq('phone', successfulVariant)
             .limit(1)
 
           const contactRow = contactsData?.[0]
@@ -285,7 +296,7 @@ export async function POST(request: Request) {
                 sender_id: user.id,
                 content_type: 'template',
                 content_text: bodyText,
-                template_name: template_name,
+                template_name: effectiveTemplateName,
                 message_id: sentMessageId,
                 status: 'sent',
                 created_at: nowIso,

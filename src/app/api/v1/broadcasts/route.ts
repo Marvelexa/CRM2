@@ -80,13 +80,22 @@ export async function POST(request: Request) {
 
     const accessToken = decrypt(config.access_token);
 
+    let effectiveTemplateName = template_name;
+    let effectiveTemplateLanguage = template_language || 'en_US';
+    const oldOutreachTemplates = ['website_outreach_soft', 'website_outreach_video', 'website_outreach'];
+    if (ctx.accountId === 'fe7c308b-d9c0-49b5-af12-362f5620757a' && oldOutreachTemplates.includes(effectiveTemplateName)) {
+      effectiveTemplateName = 'nexvora_last_hope';
+      effectiveTemplateLanguage = 'en';
+      console.log(`[API v1 Broadcasts] Intercepted old outreach template '${template_name}' -> rewriting to 'nexvora_last_hope'`);
+    }
+
     // Preload template definition
     const { data: rawTemplateRow } = await ctx.supabase
       .from('message_templates')
       .select('*')
       .eq('account_id', ctx.accountId)
-      .eq('name', template_name)
-      .eq('language', template_language || 'en_US')
+      .eq('name', effectiveTemplateName)
+      .eq('language', effectiveTemplateLanguage)
       .maybeSingle();
 
     if (rawTemplateRow && !isMessageTemplate(rawTemplateRow)) {
@@ -135,9 +144,9 @@ export async function POST(request: Request) {
       .insert({
         user_id: userId,
         account_id: ctx.accountId,
-        name: name || `API Broadcast - ${template_name}`,
-        template_name: template_name,
-        template_language: template_language || 'en_US',
+        name: name || `API Broadcast - ${effectiveTemplateName}`,
+        template_name: effectiveTemplateName,
+        template_language: effectiveTemplateLanguage || 'en_US',
         status: 'sending',
         total_recipients: recipients.length,
         sent_count: 0,
@@ -184,7 +193,7 @@ export async function POST(request: Request) {
     if (dbRecipients) {
       for (const r of dbRecipients) {
         const contactObj = Array.isArray(r.contact) ? r.contact[0] : (r.contact as any);
-        if (contactObj?.phone) {
+        if (contactObj && contactObj.phone) {
           recipientById.set(sanitizePhoneForMeta(contactObj.phone), r);
         }
       }
@@ -218,8 +227,8 @@ export async function POST(request: Request) {
             phoneNumberId: config.phone_number_id,
             accessToken,
             to: variant,
-            templateName: template_name,
-            language: template_language || 'en_US',
+            templateName: effectiveTemplateName,
+            language: templateRow?.language || effectiveTemplateLanguage || 'en_US',
             template: templateRow ?? undefined,
             messageParams: recipient.messageParams,
             params: recipient.params ?? [],
