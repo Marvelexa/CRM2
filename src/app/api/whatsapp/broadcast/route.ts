@@ -9,6 +9,7 @@ import {
   isValidE164,
   phoneVariants,
   isRecipientNotAllowedError,
+  resolveContactDisplayName,
 } from '@/lib/whatsapp/phone-utils'
 import {
   checkRateLimit,
@@ -212,7 +213,11 @@ export async function POST(request: Request) {
         continue
       }
 
-      const contactDisplayName = nameByPhone.get(sanitized) || 'there';
+      const contactDisplayName = resolveContactDisplayName(
+        Array.isArray(recipient.messageParams?.body) ? recipient.messageParams.body[0] : null,
+        Array.isArray(recipient.params) ? recipient.params[0] : null,
+        nameByPhone.get(sanitized)
+      );
       let effectiveMessageParams = recipient.messageParams;
       let effectiveParams = recipient.params ?? [];
       if (effectiveTemplateName === 'nexvora_last_hope') {

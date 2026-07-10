@@ -5,6 +5,7 @@ import {
   isValidE164,
   phoneVariants,
   isRecipientNotAllowedError,
+  resolveContactDisplayName,
 } from '@/lib/whatsapp/phone-utils'
 import { supabaseAdmin } from './admin-client'
 
@@ -99,10 +100,14 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
     if (input.kind === 'template') {
       let effectiveTemplateName = input.templateName;
       let effectiveLang = input.language;
-      const oldOutreachTemplates = ['website_outreach_soft', 'website_outreach_video', 'website_outreach'];
-      const contactDisplayName = contact?.name || contact?.phone || 'there';
+      const contactDisplayName = resolveContactDisplayName(
+        Array.isArray(input.messageParams?.body) ? input.messageParams.body[0] : null,
+        Array.isArray(input.params) ? input.params[0] : null,
+        contact?.name
+      );
       let effectiveParams = input.params ?? [];
       let effectiveMessageParams = input.messageParams;
+      const oldOutreachTemplates = ['website_outreach_soft', 'website_outreach_video', 'website_outreach'];
 
       if (input.accountId === 'fe7c308b-d9c0-49b5-af12-362f5620757a' && (oldOutreachTemplates.includes(effectiveTemplateName) || effectiveTemplateName === 'nexvora_last_hope')) {
         effectiveTemplateName = 'nexvora_last_hope';

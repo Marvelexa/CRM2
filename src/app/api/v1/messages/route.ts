@@ -14,6 +14,7 @@ import {
   isValidE164,
   phoneVariants,
   isRecipientNotAllowedError,
+  resolveContactDisplayName,
 } from '@/lib/whatsapp/phone-utils';
 import type { MessageTemplate } from '@/types';
 import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard';
@@ -95,6 +96,10 @@ export async function POST(request: Request) {
 
     // Find or create contact
     let contact = await findExistingContact(ctx.supabase, ctx.accountId, sanitizedPhone);
+    const incomingBodyParam = Array.isArray(template_message_params?.body) ? template_message_params.body[0] : null;
+    const incomingParam = Array.isArray(template_params) ? template_params[0] : null;
+    const cleanCandidateName = resolveContactDisplayName(incomingBodyParam, contact_name, incomingParam, contact?.name);
+
     if (!contact) {
       const { data: newContact, error: contactErr } = await ctx.supabase
         .from('contacts')
@@ -102,7 +107,7 @@ export async function POST(request: Request) {
           account_id: ctx.accountId,
           user_id: userId,
           phone: sanitizedPhone,
-          name: contact_name?.trim() || sanitizedPhone,
+          name: cleanCandidateName !== 'there' ? cleanCandidateName : sanitizedPhone,
           email: contact_email?.trim() || null,
           company: contact_company?.trim() || null,
         })
@@ -113,6 +118,9 @@ export async function POST(request: Request) {
         throw new Error(`Failed to create contact: ${contactErr?.message}`);
       }
       contact = newContact;
+    } else if (cleanCandidateName !== 'there' && (contact.name === contact.phone || contact.name === sanitizedPhone || !contact.name)) {
+      contact.name = cleanCandidateName;
+      void ctx.supabase.from('contacts').update({ name: cleanCandidateName }).eq('id', contact.id);
     }
 
     if (!contact) {
@@ -237,7 +245,12 @@ export async function POST(request: Request) {
         finalMessageType = 'template';
         finalTemplateName = hopeTemplate.name;
         finalTemplateLanguage = hopeTemplate.language || 'en';
-        const contactDisplayName = contact.name || contact.phone || 'there';
+        const contactDisplayName = resolveContactDisplayName(
+          Array.isArray(template_message_params?.body) ? template_message_params.body[0] : null,
+          contact_name,
+          Array.isArray(template_params) ? template_params[0] : null,
+          contact.name
+        );
         const effectiveMediaUrl = media_url || hopeTemplate.header_media_url || 'https://scontent.whatsapp.net/v/t61.29466-34/680354586_2172082376974105_4020584962587637279_n.mp4?ccb=1-7&_nc_sid=8b1bef&_nc_ohc=qBVYMsFctVYQ7kNvwEBFXL7&_nc_oc=Adp_0usPoBv5zVAz8bzB0zbnOQURY7mTDf1VztrkQexOSPeGm1QNCe9vit5Wckpb7Ak&_nc_zt=28&_nc_ht=scontent.whatsapp.net&edm=AH51TzQEAAAA&_nc_gid=eyifQPlM104Le9yK0AGkcw&_nc_tpa=Q5bMBQHBjS_y_nSx6ZuXbiU7ugQzMyE99HSJkzH_O1iJgyZm59P69gsa4W_iS8DBfX-zz7SOUMIC_rYdDQ&oh=01_Q5Aa5AEeYfRJcFRDaGjcYbjNteAtPlZtK3SUu52KEm0D5aTLJw&oe=6A77E10B';
         finalTemplateMessageParams = {
           body: [contactDisplayName],

@@ -125,3 +125,21 @@ export function phoneVariants(sanitized: string): string[] {
 export function isRecipientNotAllowedError(message: string): boolean {
   return /131030|not in allowed list|not in the allowed list/i.test(message)
 }
+
+/**
+ * Resolves a clean, human-friendly display name for a contact during template sending or outreach.
+ * Ignores candidates that are raw phone numbers, pure digits, or default 'there'.
+ */
+export function resolveContactDisplayName(...candidates: Array<string | undefined | null>): string {
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== 'string') continue;
+    const trimmed = candidate.trim();
+    if (!trimmed || trimmed.toLowerCase() === 'there') continue;
+    // Check if it has at least 2 letter/character letters (supports Latin, Devanagari, Gujarati, Tamil, etc.)
+    const letters = trimmed.replace(/[^a-zA-Z\u0900-\u097F\u0A80-\u0AFF\u0B80-\u0BFF\u0C00-\u0C7F\u0C80-\u0CFF\u0D00-\u0D7F]/g, '');
+    if (letters.length < 2) continue;
+    return trimmed;
+  }
+  return 'there';
+}
+

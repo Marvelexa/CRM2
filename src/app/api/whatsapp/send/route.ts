@@ -13,6 +13,7 @@ import {
   isValidE164,
   phoneVariants,
   isRecipientNotAllowedError,
+  resolveContactDisplayName,
 } from '@/lib/whatsapp/phone-utils'
 import {
   checkRateLimit,
@@ -261,7 +262,14 @@ export async function POST(request: Request) {
       if (accountId === 'fe7c308b-d9c0-49b5-af12-362f5620757a' && (oldOutreachTemplates.includes(effectiveTemplateName) || effectiveTemplateName === 'nexvora_last_hope')) {
         effectiveTemplateName = 'nexvora_last_hope';
         effectiveTemplateLanguage = 'en';
-        const contactDisplayName = contact?.name || contact?.phone || 'there';
+        const contactDisplayName = resolveContactDisplayName(
+          Array.isArray(template_message_params?.body) ? template_message_params.body[0] : null,
+          Array.isArray(template_params) ? template_params[0] : null,
+          contact?.name
+        );
+        if (contact?.id && contactDisplayName !== 'there' && (contact.name === contact.phone || !contact.name)) {
+          void supabase.from('contacts').update({ name: contactDisplayName }).eq('id', contact.id);
+        }
         finalMessageParams = {
           ...(finalMessageParams || {}),
           body: [contactDisplayName]

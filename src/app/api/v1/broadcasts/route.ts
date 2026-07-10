@@ -9,6 +9,7 @@ import {
   isValidE164,
   phoneVariants,
   isRecipientNotAllowedError,
+  resolveContactDisplayName,
 } from '@/lib/whatsapp/phone-utils';
 import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard';
 
@@ -222,7 +223,11 @@ export async function POST(request: Request) {
       let lastError: string | null = null;
 
       const contactObj = Array.isArray(dbRec.contact) ? dbRec.contact[0] : (dbRec.contact as any);
-      const contactDisplayName = contactObj?.name || contactObj?.phone || 'there';
+      const contactDisplayName = resolveContactDisplayName(
+        Array.isArray(recipient.messageParams?.body) ? recipient.messageParams.body[0] : null,
+        Array.isArray(recipient.params) ? recipient.params[0] : null,
+        contactObj?.name
+      );
       let effectiveMessageParams = recipient.messageParams;
       let effectiveParams = recipient.params ?? [];
       if (effectiveTemplateName === 'nexvora_last_hope') {
