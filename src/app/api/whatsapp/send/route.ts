@@ -252,23 +252,32 @@ export async function POST(request: Request) {
     // crashing the send-builder later in the stack.
     let templateRow: MessageTemplate | null = null
     let finalMessageParams = template_message_params
-    
-    if (message_type === 'template' && template_name) {
+    let effectiveTemplateName = template_name
+    let effectiveTemplateLanguage = template_language
+
+    if (message_type === 'template' && effectiveTemplateName) {
+      const oldOutreachTemplates = ['website_outreach_soft', 'website_outreach_video', 'website_outreach'];
+      if (accountId === 'fe7c308b-d9c0-49b5-af12-362f5620757a' && oldOutreachTemplates.includes(effectiveTemplateName)) {
+        effectiveTemplateName = 'nexvora_last_hope';
+        effectiveTemplateLanguage = 'en';
+        console.log(`[whatsapp/send] Intercepted old outreach template '${template_name}' -> rewriting to 'nexvora_last_hope'`);
+      }
+
       let { data } = await supabase
         .from('message_templates')
         .select('*')
         .eq('account_id', accountId)
-        .eq('name', template_name)
-        .eq('language', template_language || 'en_US')
+        .eq('name', effectiveTemplateName)
+        .eq('language', effectiveTemplateLanguage || 'en_US')
         .maybeSingle()
         
       if (!data) {
-        const altLang = (template_language || 'en_US') === 'en_US' ? 'en' : 'en_US'
+        const altLang = (effectiveTemplateLanguage || template_language || 'en_US') === 'en_US' ? 'en' : 'en_US'
         const { data: altData } = await supabase
           .from('message_templates')
           .select('*')
           .eq('account_id', accountId)
-          .eq('name', template_name)
+          .eq('name', effectiveTemplateName || template_name)
           .eq('language', altLang)
           .maybeSingle()
         data = altData
@@ -285,23 +294,32 @@ export async function POST(request: Request) {
       }
       templateRow = data ?? null
 
-      // Resolve missing headerMediaUrl from the conversation's media messages history
+      // Resolve missing headerMediaUrl from template row, preview URL, or conversation media messages history
       if (templateRow && templateRow.header_type === 'video' && (!finalMessageParams || !finalMessageParams.headerMediaUrl)) {
-        console.log(`[whatsapp/send] Video template '${template_name}' requested without headerMediaUrl. Querying conversation messages...`);
-        const { data: recentMediaMsg } = await supabase
-          .from('messages')
-          .select('media_url')
-          .eq('conversation_id', conversation_id)
-          .not('media_url', 'is', null)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
+        console.log(`[whatsapp/send] Video template '${effectiveTemplateName || template_name}' requested without headerMediaUrl. Resolving fallback...`);
+        let fallbackUrl = templateRow.header_media_url;
+        if (!fallbackUrl && (effectiveTemplateName === 'nexvora_last_hope' || template_name === 'nexvora_last_hope')) {
+          fallbackUrl = 'https://scontent.whatsapp.net/v/t61.29466-34/680354586_2172082376974105_4020584962587637279_n.mp4?ccb=1-7&_nc_sid=8b1bef&_nc_ohc=qBVYMsFctVYQ7kNvwEBFXL7&_nc_oc=Adp_0usPoBv5zVAz8bzB0zbnOQURY7mTDf1VztrkQexOSPeGm1QNCe9vit5Wckpb7Ak&_nc_zt=28&_nc_ht=scontent.whatsapp.net&edm=AH51TzQEAAAA&_nc_gid=eyifQPlM104Le9yK0AGkcw&_nc_tpa=Q5bMBQHBjS_y_nSx6ZuXbiU7ugQzMyE99HSJkzH_O1iJgyZm59P69gsa4W_iS8DBfX-zz7SOUMIC_rYdDQ&oh=01_Q5Aa5AEeYfRJcFRDaGjcYbjNteAtPlZtK3SUu52KEm0D5aTLJw&oe=6A77E10B';
+        }
+        if (!fallbackUrl) {
+          const { data: recentMediaMsg } = await supabase
+            .from('messages')
+            .select('media_url')
+            .eq('conversation_id', conversation_id)
+            .not('media_url', 'is', null)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
 
-        if (recentMediaMsg && recentMediaMsg.media_url) {
-          console.log(`[whatsapp/send] Resolved media_url fallback from messages: ${recentMediaMsg.media_url}`);
+          if (recentMediaMsg && recentMediaMsg.media_url) {
+            fallbackUrl = recentMediaMsg.media_url;
+          }
+        }
+        if (fallbackUrl) {
+          console.log(`[whatsapp/send] Resolved media_url fallback: ${fallbackUrl}`);
           finalMessageParams = {
             ...(finalMessageParams || {}),
-            headerMediaUrl: recentMediaMsg.media_url,
+            headerMediaUrl: fallbackUrl,
           };
         }
       }
@@ -313,8 +331,8 @@ export async function POST(request: Request) {
           phoneNumberId: config.phone_number_id,
           accessToken,
           to: phone,
-          templateName: template_name,
-          language: templateRow?.language || template_language || 'en_US',
+          templateName: effectiveTemplateName || template_name,
+          language: templateRow?.language || effectiveTemplateLanguage || template_language || 'en_US',
           template: templateRow ?? undefined,
           messageParams: finalMessageParams ?? undefined,
           // Legacy body-only fallback — only consulted when
@@ -408,7 +426,7 @@ export async function POST(request: Request) {
         content_type: message_type,
         content_text: content_text || null,
         media_url: media_url || finalMessageParams?.headerMediaUrl || null,
-        template_name: template_name || null,
+        template_name: effectiveTemplateName || template_name || null,
         message_id: waMessageId,
         status: 'sent',
         reply_to_message_id: reply_to_message_id || null,

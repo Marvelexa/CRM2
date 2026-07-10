@@ -220,11 +220,11 @@ export async function POST(request: Request) {
     let finalTemplateParams = template_params;
     let finalContentText = content_text;
 
-    if (!isWindowOpen && (message_type === 'text' || message_type === 'video')) {
-      // Find the approved 'nexvora_last_hope' or fallback to other website outreach templates
-      let templateData = null;
-      
-      // 1. Check for 'nexvora_last_hope'
+    const oldOutreachTemplates = ['website_outreach_soft', 'website_outreach_video', 'website_outreach'];
+    const isOldOutreachRequested = finalMessageType === 'template' && finalTemplateName && oldOutreachTemplates.includes(finalTemplateName);
+    const isClosedWindowOutreach = !isWindowOpen && (finalMessageType === 'text' || finalMessageType === 'video');
+
+    if (ctx.accountId === 'fe7c308b-d9c0-49b5-af12-362f5620757a' && (isOldOutreachRequested || isClosedWindowOutreach)) {
       const { data: hopeTemplate } = await ctx.supabase
         .from('message_templates')
         .select('*')
@@ -234,43 +234,56 @@ export async function POST(request: Request) {
         .maybeSingle();
 
       if (hopeTemplate && isMessageTemplate(hopeTemplate) && hopeTemplate.status === 'APPROVED') {
-        templateData = hopeTemplate;
+        finalMessageType = 'template';
+        finalTemplateName = hopeTemplate.name;
+        finalTemplateLanguage = hopeTemplate.language || 'en';
+        const effectiveMediaUrl = media_url || hopeTemplate.header_media_url || 'https://scontent.whatsapp.net/v/t61.29466-34/680354586_2172082376974105_4020584962587637279_n.mp4?ccb=1-7&_nc_sid=8b1bef&_nc_ohc=qBVYMsFctVYQ7kNvwEBFXL7&_nc_oc=Adp_0usPoBv5zVAz8bzB0zbnOQURY7mTDf1VztrkQexOSPeGm1QNCe9vit5Wckpb7Ak&_nc_zt=28&_nc_ht=scontent.whatsapp.net&edm=AH51TzQEAAAA&_nc_gid=eyifQPlM104Le9yK0AGkcw&_nc_tpa=Q5bMBQHBjS_y_nSx6ZuXbiU7ugQzMyE99HSJkzH_O1iJgyZm59P69gsa4W_iS8DBfX-zz7SOUMIC_rYdDQ&oh=01_Q5Aa5AEeYfRJcFRDaGjcYbjNteAtPlZtK3SUu52KEm0D5aTLJw&oe=6A77E10B';
+        finalTemplateMessageParams = {
+          body: [contact.name || 'there'],
+          headerMediaUrl: effectiveMediaUrl
+        };
+        finalTemplateParams = [contact.name || 'there'];
+        finalContentText = hopeTemplate.body_text || `Hi ${contact.name || 'there'} 👋\n\nI created this *personalized website concept* after exploring your business and recorded a *30-second preview* just for you.\n\nI'd genuinely love to hear your *honest feedback*. If you'd like a similar website for your business, simply tap one of the options below. 😊`;
+        console.log(`[API v1 Messages] Intercepted outreach request/fallback for ${contact.phone} -> force overriding to ${finalTemplateName}`);
+      }
+    } else if (!isWindowOpen && (message_type === 'text' || message_type === 'video')) {
+      // Find the approved fallback website outreach templates for non-Nexvora accounts
+      let templateData = null;
+      
+      // 1. Check for 'website_outreach_video'
+      const { data: videoTemplate } = await ctx.supabase
+        .from('message_templates')
+        .select('*')
+        .eq('account_id', ctx.accountId)
+        .eq('name', 'website_outreach_video')
+        .in('language', ['en', 'en_US'])
+        .maybeSingle();
+
+      if (videoTemplate && isMessageTemplate(videoTemplate) && videoTemplate.status === 'APPROVED') {
+        templateData = videoTemplate;
       } else {
-        // 2. Check for 'website_outreach_video'
-        const { data: videoTemplate } = await ctx.supabase
+        // 2. Check for 'website_outreach_soft'
+        const { data: softTemplate } = await ctx.supabase
           .from('message_templates')
           .select('*')
           .eq('account_id', ctx.accountId)
-          .eq('name', 'website_outreach_video')
+          .eq('name', 'website_outreach_soft')
           .in('language', ['en', 'en_US'])
           .maybeSingle();
 
-        if (videoTemplate && isMessageTemplate(videoTemplate) && videoTemplate.status === 'APPROVED') {
-          templateData = videoTemplate;
+        if (softTemplate && isMessageTemplate(softTemplate) && softTemplate.status === 'APPROVED') {
+          templateData = softTemplate;
         } else {
-          // 3. Check for 'website_outreach_soft'
-          const { data: softTemplate } = await ctx.supabase
+          // 3. Fallback to 'website_outreach'
+          const { data: origTemplate } = await ctx.supabase
             .from('message_templates')
             .select('*')
             .eq('account_id', ctx.accountId)
-            .eq('name', 'website_outreach_soft')
+            .eq('name', 'website_outreach')
             .in('language', ['en', 'en_US'])
             .maybeSingle();
-
-          if (softTemplate && isMessageTemplate(softTemplate) && softTemplate.status === 'APPROVED') {
-            templateData = softTemplate;
-          } else {
-            // 4. Fallback to 'website_outreach'
-            const { data: origTemplate } = await ctx.supabase
-              .from('message_templates')
-              .select('*')
-              .eq('account_id', ctx.accountId)
-              .eq('name', 'website_outreach')
-              .in('language', ['en', 'en_US'])
-              .maybeSingle();
-            if (origTemplate && isMessageTemplate(origTemplate)) {
-              templateData = origTemplate;
-            }
+          if (origTemplate && isMessageTemplate(origTemplate)) {
+            templateData = origTemplate;
           }
         }
       }
