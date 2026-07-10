@@ -221,43 +221,56 @@ export async function POST(request: Request) {
     let finalContentText = content_text;
 
     if (!isWindowOpen && (message_type === 'text' || message_type === 'video')) {
-      // Find the approved 'website_outreach_soft' or fallback to 'website_outreach' in the database
+      // Find the approved 'nexvora_last_hope' or fallback to other website outreach templates
       let templateData = null;
       
-      // 1. Check for 'website_outreach_video'
-      const { data: videoTemplate } = await ctx.supabase
+      // 1. Check for 'nexvora_last_hope'
+      const { data: hopeTemplate } = await ctx.supabase
         .from('message_templates')
         .select('*')
         .eq('account_id', ctx.accountId)
-        .eq('name', 'website_outreach_video')
+        .eq('name', 'nexvora_last_hope')
         .in('language', ['en', 'en_US'])
         .maybeSingle();
 
-      if (videoTemplate && isMessageTemplate(videoTemplate) && videoTemplate.status === 'APPROVED') {
-        templateData = videoTemplate;
+      if (hopeTemplate && isMessageTemplate(hopeTemplate) && hopeTemplate.status === 'APPROVED') {
+        templateData = hopeTemplate;
       } else {
-        // 2. Check for 'website_outreach_soft'
-        const { data: softTemplate } = await ctx.supabase
+        // 2. Check for 'website_outreach_video'
+        const { data: videoTemplate } = await ctx.supabase
           .from('message_templates')
           .select('*')
           .eq('account_id', ctx.accountId)
-          .eq('name', 'website_outreach_soft')
+          .eq('name', 'website_outreach_video')
           .in('language', ['en', 'en_US'])
           .maybeSingle();
 
-        if (softTemplate && isMessageTemplate(softTemplate) && softTemplate.status === 'APPROVED') {
-          templateData = softTemplate;
+        if (videoTemplate && isMessageTemplate(videoTemplate) && videoTemplate.status === 'APPROVED') {
+          templateData = videoTemplate;
         } else {
-          // 3. Fallback to 'website_outreach'
-          const { data: origTemplate } = await ctx.supabase
+          // 3. Check for 'website_outreach_soft'
+          const { data: softTemplate } = await ctx.supabase
             .from('message_templates')
             .select('*')
             .eq('account_id', ctx.accountId)
-            .eq('name', 'website_outreach')
+            .eq('name', 'website_outreach_soft')
             .in('language', ['en', 'en_US'])
             .maybeSingle();
-          if (origTemplate && isMessageTemplate(origTemplate)) {
-            templateData = origTemplate;
+
+          if (softTemplate && isMessageTemplate(softTemplate) && softTemplate.status === 'APPROVED') {
+            templateData = softTemplate;
+          } else {
+            // 4. Fallback to 'website_outreach'
+            const { data: origTemplate } = await ctx.supabase
+              .from('message_templates')
+              .select('*')
+              .eq('account_id', ctx.accountId)
+              .eq('name', 'website_outreach')
+              .in('language', ['en', 'en_US'])
+              .maybeSingle();
+            if (origTemplate && isMessageTemplate(origTemplate)) {
+              templateData = origTemplate;
+            }
           }
         }
       }
@@ -268,12 +281,13 @@ export async function POST(request: Request) {
         finalTemplateLanguage = templateData.language || 'en_US';
         
         const isVideoHeader = templateData.header_type === 'video';
+        const effectiveMediaUrl = media_url || templateData.header_media_url;
         finalTemplateMessageParams = {
           body: [contact.name || 'there'],
-          ...(isVideoHeader && media_url ? { headerMediaUrl: media_url } : {})
+          ...(isVideoHeader && effectiveMediaUrl ? { headerMediaUrl: effectiveMediaUrl } : {})
         };
         finalTemplateParams = [contact.name || 'there'];
-        finalContentText = templateData.body_text || `Hello! I made this sample website for ${contact.name || 'there'} — saw your awesome reviews.`;
+        finalContentText = templateData.body_text || `Hello! I made this sample website for ${contact.name || 'there'}.`;
         console.log(`[API v1 Messages] Closed window detected. Falling back to template '${templateData.name}' (Video Header: ${isVideoHeader}) for phone ${sanitizedPhone}`);
       }
     }
