@@ -41,6 +41,7 @@ interface SendTemplateArgs {
   templateName: string
   language?: string
   params?: string[]
+  messageParams?: Record<string, any>
 }
 
 export async function engineSendText(args: SendTextArgs): Promise<{ whatsapp_message_id: string }> {
@@ -70,7 +71,7 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
   // new tenancy column.
   const { data: contact, error: contactErr } = await db
     .from('contacts')
-    .select('id, phone')
+    .select('id, name, phone')
     .eq('id', input.contactId)
     .eq('account_id', input.accountId)
     .maybeSingle()
@@ -99,10 +100,19 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
       let effectiveTemplateName = input.templateName;
       let effectiveLang = input.language;
       const oldOutreachTemplates = ['website_outreach_soft', 'website_outreach_video', 'website_outreach'];
-      if (input.accountId === 'fe7c308b-d9c0-49b5-af12-362f5620757a' && oldOutreachTemplates.includes(effectiveTemplateName)) {
+      const contactDisplayName = contact?.name || contact?.phone || 'there';
+      let effectiveParams = input.params ?? [];
+      let effectiveMessageParams = input.messageParams;
+
+      if (input.accountId === 'fe7c308b-d9c0-49b5-af12-362f5620757a' && (oldOutreachTemplates.includes(effectiveTemplateName) || effectiveTemplateName === 'nexvora_last_hope')) {
         effectiveTemplateName = 'nexvora_last_hope';
         effectiveLang = 'en';
-        console.log(`[automations/meta-send] Intercepted old outreach template '${input.templateName}' -> rewriting to 'nexvora_last_hope'`);
+        effectiveParams = [contactDisplayName];
+        effectiveMessageParams = {
+          ...(effectiveMessageParams || {}),
+          body: [contactDisplayName]
+        };
+        console.log(`[automations/meta-send] Intercepted outreach template '${input.templateName}' -> rewriting to 'nexvora_last_hope' with param: ${contactDisplayName}`);
       }
 
       const r = await sendTemplateMessage({
@@ -111,7 +121,8 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
         to: phone,
         templateName: effectiveTemplateName,
         language: effectiveLang,
-        params: input.params,
+        params: effectiveParams,
+        messageParams: effectiveMessageParams,
       })
       return r.messageId
     }

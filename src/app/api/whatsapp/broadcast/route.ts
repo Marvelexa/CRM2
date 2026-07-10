@@ -184,6 +184,17 @@ export async function POST(request: Request) {
     }
     const templateRow = rawTemplateRow ?? null
 
+    const { data: allContacts } = await supabase
+      .from('contacts')
+      .select('phone, name')
+      .eq('account_id', accountId)
+    const nameByPhone = new Map<string, string>()
+    if (allContacts) {
+      for (const c of allContacts) {
+        if (c.phone) nameByPhone.set(sanitizePhoneForMeta(c.phone), c.name || '')
+      }
+    }
+
     const results: BroadcastResult[] = []
     let sentCount = 0
     let failedCount = 0
@@ -199,6 +210,17 @@ export async function POST(request: Request) {
         })
         failedCount++
         continue
+      }
+
+      const contactDisplayName = nameByPhone.get(sanitized) || 'there';
+      let effectiveMessageParams = recipient.messageParams;
+      let effectiveParams = recipient.params ?? [];
+      if (effectiveTemplateName === 'nexvora_last_hope') {
+        effectiveMessageParams = {
+          ...(effectiveMessageParams || {}),
+          body: [contactDisplayName]
+        };
+        effectiveParams = [contactDisplayName];
       }
 
       // Retry with phone variants on "not in allowed list" so numbers
@@ -217,8 +239,8 @@ export async function POST(request: Request) {
             templateName: effectiveTemplateName,
             language: templateRow?.language || effectiveTemplateLanguage || 'en_US',
             template: templateRow ?? undefined,
-            messageParams: recipient.messageParams,
-            params: recipient.params ?? [],
+            messageParams: effectiveMessageParams,
+            params: effectiveParams,
           })
           sentMessageId = result.messageId
           successfulVariant = variant
@@ -246,7 +268,10 @@ export async function POST(request: Request) {
 
         // Log broadcast message to CRM inbox (conversations + messages tables)
         try {
-          const bodyText = templateRow && 'body_text' in templateRow ? templateRow.body_text : '[Template Broadcast]'
+          let bodyText = templateRow && 'body_text' in templateRow ? templateRow.body_text : '[Template Broadcast]'
+          if (bodyText && typeof bodyText === 'string') {
+            bodyText = bodyText.replace(/\{\{1\}\}/g, contactDisplayName);
+          }
           const { data: contactsData } = await supabase
             .from('contacts')
             .select('id, user_id, account_id')

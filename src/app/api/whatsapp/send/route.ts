@@ -254,13 +254,20 @@ export async function POST(request: Request) {
     let finalMessageParams = template_message_params
     let effectiveTemplateName = template_name
     let effectiveTemplateLanguage = template_language
+    let effectiveTemplateParams = template_params || []
 
     if (message_type === 'template' && effectiveTemplateName) {
       const oldOutreachTemplates = ['website_outreach_soft', 'website_outreach_video', 'website_outreach'];
-      if (accountId === 'fe7c308b-d9c0-49b5-af12-362f5620757a' && oldOutreachTemplates.includes(effectiveTemplateName)) {
+      if (accountId === 'fe7c308b-d9c0-49b5-af12-362f5620757a' && (oldOutreachTemplates.includes(effectiveTemplateName) || effectiveTemplateName === 'nexvora_last_hope')) {
         effectiveTemplateName = 'nexvora_last_hope';
         effectiveTemplateLanguage = 'en';
-        console.log(`[whatsapp/send] Intercepted old outreach template '${template_name}' -> rewriting to 'nexvora_last_hope'`);
+        const contactDisplayName = contact?.name || contact?.phone || 'there';
+        finalMessageParams = {
+          ...(finalMessageParams || {}),
+          body: [contactDisplayName]
+        };
+        effectiveTemplateParams = [contactDisplayName];
+        console.log(`[whatsapp/send] Intercepted outreach template '${template_name}' -> rewriting to 'nexvora_last_hope' with param: ${contactDisplayName}`);
       }
 
       let { data } = await supabase
@@ -337,7 +344,7 @@ export async function POST(request: Request) {
           messageParams: finalMessageParams ?? undefined,
           // Legacy body-only fallback — only consulted when
           // messageParams.body isn't set.
-          params: template_params || [],
+          params: effectiveTemplateParams,
           contextMessageId,
         })
         return result.messageId
@@ -414,6 +421,12 @@ export async function POST(request: Request) {
         .eq('id', contact.id)
     }
 
+    const contactDisplayName = contact?.name || contact?.phone || 'there';
+    let effectiveContentText = content_text || (templateRow?.body_text ? templateRow.body_text : null);
+    if (effectiveContentText && typeof effectiveContentText === 'string') {
+      effectiveContentText = effectiveContentText.replace(/\{\{1\}\}/g, contactDisplayName);
+    }
+
     // Insert message into DB — field names MUST match the messages schema
     // (see supabase/migrations/001_initial_schema.sql):
     //   conversation_id, sender_type, content_type, content_text,
@@ -424,7 +437,7 @@ export async function POST(request: Request) {
         conversation_id,
         sender_type: 'agent',
         content_type: message_type,
-        content_text: content_text || null,
+        content_text: effectiveContentText || null,
         media_url: media_url || finalMessageParams?.headerMediaUrl || null,
         template_name: effectiveTemplateName || template_name || null,
         message_id: waMessageId,
@@ -446,7 +459,7 @@ export async function POST(request: Request) {
     await supabase
       .from('conversations')
       .update({
-        last_message_text: content_text || `[${message_type}]`,
+        last_message_text: effectiveContentText || `[${message_type}]`,
         last_message_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })

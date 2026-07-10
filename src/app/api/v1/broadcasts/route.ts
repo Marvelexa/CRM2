@@ -186,7 +186,7 @@ export async function POST(request: Request) {
     // Load newly created recipient rows to get their IDs
     const { data: dbRecipients } = await ctx.supabase
       .from('broadcast_recipients')
-      .select('id, contact_id, status, contact:contacts(phone)')
+      .select('id, contact_id, status, contact:contacts(name, phone)')
       .eq('broadcast_id', broadcast.id);
 
     const recipientById = new Map<string, any>();
@@ -221,6 +221,18 @@ export async function POST(request: Request) {
       let sentMessageId: string | null = null;
       let lastError: string | null = null;
 
+      const contactObj = Array.isArray(dbRec.contact) ? dbRec.contact[0] : (dbRec.contact as any);
+      const contactDisplayName = contactObj?.name || contactObj?.phone || 'there';
+      let effectiveMessageParams = recipient.messageParams;
+      let effectiveParams = recipient.params ?? [];
+      if (effectiveTemplateName === 'nexvora_last_hope') {
+        effectiveMessageParams = {
+          ...(effectiveMessageParams || {}),
+          body: [contactDisplayName]
+        };
+        effectiveParams = [contactDisplayName];
+      }
+
       for (const variant of variants) {
         try {
           const result = await sendTemplateMessage({
@@ -230,8 +242,8 @@ export async function POST(request: Request) {
             templateName: effectiveTemplateName,
             language: templateRow?.language || effectiveTemplateLanguage || 'en_US',
             template: templateRow ?? undefined,
-            messageParams: recipient.messageParams,
-            params: recipient.params ?? [],
+            messageParams: effectiveMessageParams,
+            params: effectiveParams,
           });
           sentMessageId = result.messageId;
           lastError = null;
