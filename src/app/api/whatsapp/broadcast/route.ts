@@ -232,6 +232,69 @@ export async function POST(request: Request) {
           whatsapp_message_id: sentMessageId,
         })
         sentCount++
+
+        // Log broadcast message to CRM inbox (conversations + messages tables)
+        try {
+          const bodyText = templateRow && 'body_text' in templateRow ? templateRow.body_text : '[Template Broadcast]'
+          const { data: contactsData } = await supabase
+            .from('contacts')
+            .select('id, user_id, account_id')
+            .eq('account_id', accountId)
+            .eq('phone', variant)
+            .limit(1)
+
+          const contactRow = contactsData?.[0]
+          if (contactRow) {
+            let { data: conv } = await supabase
+              .from('conversations')
+              .select('id')
+              .eq('contact_id', contactRow.id)
+              .maybeSingle()
+
+            const nowIso = new Date().toISOString()
+            if (!conv) {
+              const { data: newConv } = await supabase
+                .from('conversations')
+                .insert({
+                  contact_id: contactRow.id,
+                  user_id: contactRow.user_id || user.id,
+                  account_id: accountId,
+                  status: 'open',
+                  last_message_text: bodyText,
+                  last_message_at: nowIso,
+                  unread_count: 0,
+                })
+                .select('id')
+                .maybeSingle()
+              conv = newConv
+            } else {
+              await supabase
+                .from('conversations')
+                .update({
+                  last_message_text: bodyText,
+                  last_message_at: nowIso,
+                  status: 'open',
+                })
+                .eq('id', conv.id)
+            }
+
+            if (conv) {
+              await supabase.from('messages').insert({
+                conversation_id: conv.id,
+                sender_type: 'agent',
+                sender_id: user.id,
+                content_type: 'template',
+                content_text: bodyText,
+                template_name: template_name,
+                message_id: sentMessageId,
+                status: 'sent',
+                created_at: nowIso,
+              })
+            }
+          }
+        } catch (inboxErr) {
+          console.error('Failed to log broadcast message to CRM inbox:', inboxErr)
+        }
       } else {
         console.error(
           `Failed to send broadcast to ${recipient.phone}:`,
