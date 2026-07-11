@@ -12,6 +12,7 @@ import {
   isTemplateWebhookField,
 } from '@/lib/whatsapp/template-webhook'
 import { generateAIReply } from '@/lib/ai/reply-generator'
+import { isOwnerPhone, handleOwnerAssistantQuery } from '@/lib/ai/owner-assistant'
 
 
 // In-memory caches to bypass database lookups on every incoming webhook message
@@ -1252,6 +1253,30 @@ async function processMessage(
       .eq('id', conversation.id),
     flagBroadcastReplyIfAny(accountId, contactRecord.id)
   ]);
+
+  // ============================================================
+  // OWNER EXECUTIVE AI ASSISTANT CHECK
+  // Intercept messages exclusively from Loan plus+ owner (+91 8000 270 207)
+  // or Nexvora owner (+91 75749 01888) to provide instant CRM summaries.
+  // ============================================================
+  const ownerCheck = isOwnerPhone(contactRecord.phone);
+  if (ownerCheck.isOwner && ownerCheck.ownerType) {
+    const inboundText = contentText ?? message.text?.body ?? '';
+    const handled = await handleOwnerAssistantQuery({
+      inboundText,
+      conversation,
+      contactRecord,
+      ownerType: ownerCheck.ownerType,
+      accessToken,
+      phoneNumberId,
+      supabaseAdmin: supabaseAdmin(),
+      metaMessageId: message.id
+    });
+    if (handled) {
+      console.log(`[webhook] Owner Executive Assistant processed query for ${contactRecord.phone}`);
+      return;
+    }
+  }
 
   // ============================================================
   // Flow runner dispatch.
