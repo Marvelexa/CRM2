@@ -198,8 +198,13 @@ INSTRUCTIONS:
 2. If the owner asks for advice on closing leads or what to do next, provide expert executive recommendations.
 3. Be warm, concise, and respectful. Use emojis and WhatsApp bold formatting (*word*). Do not invent false data if the contact is not listed.`;
 
-      const aiResponse = await generateAIReply(`Owner Question: "${inboundText}"`, systemPrompt);
-      replyText = aiResponse || `I reviewed your CRM data for "${inboundText}". You currently have ${repliedSummaryList.length} active customer replies and ${noReplyList.length} pending leads. Type *Summary* to view all exact messages.`;
+      let aiResponse = '';
+      try {
+        aiResponse = await generateAIReply(`Owner Question: "${inboundText}"`, systemPrompt);
+      } catch (aiErr) {
+        console.warn('[Owner Assistant] AI generation failed, using direct data summary:', aiErr);
+      }
+      replyText = aiResponse || `🤖 *AI Assistant Data Report for "${inboundText}":*\n\n📊 *Total Contacts:* ${totalContacts || 0}\n💬 *Recent Customer Replies (${repliedSummaryList.length}):*\n${repliedSummaryList.slice(0, 5).join('\n') || 'None'}\n\n⏳ *Pending Leads Awaiting Reply (${noReplyList.length}):*\n${noReplyList.slice(0, 5).join('\n') || 'None'}\n\n💡 _Type *Summary* or *Pending* for the full lists._`;
     }
 
     // Send text response to the Owner
