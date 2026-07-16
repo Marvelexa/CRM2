@@ -830,34 +830,33 @@ export interface SendInteractiveCtaUrlArgs {
   accessToken: string
   to: string
   bodyText: string
-  headerText?: string
-  footerText?: string
   buttonText: string
   url: string
+  headerText?: string
+  footerText?: string
   contextMessageId?: string
 }
 
-/**
- * Send an interactive message with a Call To Action (CTA) URL button.
- */
 export async function sendInteractiveCtaUrl(
   args: SendInteractiveCtaUrlArgs
 ): Promise<MetaSendResult> {
   const {
     phoneNumberId, accessToken, to,
-    bodyText, headerText, footerText, buttonText, url, contextMessageId,
+    bodyText, buttonText, url, headerText, footerText, contextMessageId,
   } = args
+  validateInteractiveBody(bodyText)
+  validateInteractiveHeaderFooter(headerText, footerText)
 
   const interactive: Record<string, unknown> = {
     type: 'cta_url',
+    body: { text: bodyText },
     action: {
       name: 'cta_url',
       parameters: {
         display_text: buttonText,
-        url,
+        url: url
       }
-    },
-    body: { text: bodyText },
+    }
   }
   if (headerText) interactive.header = { type: 'text', text: headerText }
   if (footerText) interactive.footer = { text: footerText }
@@ -871,8 +870,8 @@ export async function sendInteractiveCtaUrl(
   }
   if (contextMessageId) body.context = { message_id: contextMessageId }
 
-  const reqUrl = `${META_API_BASE}/${phoneNumberId}/messages`
-  const response = await fetch(reqUrl, {
+  const targetUrl = `${META_API_BASE}/${phoneNumberId}/messages`
+  const response = await fetch(targetUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

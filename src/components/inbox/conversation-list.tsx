@@ -4,8 +4,9 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import type { Conversation, ConversationStatus } from "@/types";
-import { Search, ChevronDown } from "lucide-react";
+import { Search, ChevronDown, Plus, X } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
@@ -56,6 +57,130 @@ export function ConversationList({
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<InboxFilter>("all");
   const [loading, setLoading] = useState(true);
+  const [showNewChatModal, setShowNewChatModal] = useState(false);
+  const [newPhone, setNewPhone] = useState("");
+  const [newName, setNewName] = useState("");
+  const [isCreating, setIsCreating] = useState(false);
+
+  const handleCreateNewChatSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPhone.trim()) return;
+
+    setIsCreating(true);
+    try {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Unauthorized: Please sign in first.");
+
+      const { data: profile, error: profileErr } = await supabase
+        .from('profiles')
+        .select('account_id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (profileErr || !profile?.account_id) {
+        throw new Error("No active account associated with your profile.");
+      }
+
+      const accountId = profile.account_id;
+      let cleanPhone = newPhone.trim().replace(/[^0-9]/g, "");
+      if (cleanPhone.length === 10) {
+        cleanPhone = "91" + cleanPhone; // Default to India country code if 10 digit
+      }
+
+      let contactId = null;
+      const { data: existingContact } = await supabase
+        .from('contacts')
+        .select('id')
+        .eq('account_id', accountId)
+        .eq('phone_normalized', cleanPhone)
+        .maybeSingle();
+
+      if (existingContact) {
+        contactId = existingContact.id;
+      } else {
+        const newContactId = window.crypto.randomUUID();
+        const { data: insertedContact, error: contactError } = await supabase
+          .from('contacts')
+          .insert({
+            id: newContactId,
+            account_id: accountId,
+            user_id: user.id,
+            phone: newPhone.trim(),
+            name: newName.trim() || newPhone.trim()
+          })
+          .select()
+          .single();
+
+        if (contactError) throw contactError;
+        contactId = insertedContact.id;
+      }
+
+      let conversationId = null;
+      const { data: existingConv } = await supabase
+        .from('conversations')
+        .select('id')
+        .eq('account_id', accountId)
+        .eq('contact_id', contactId)
+        .maybeSingle();
+
+      if (existingConv) {
+        conversationId = existingConv.id;
+      } else {
+        const newConvId = window.crypto.randomUUID();
+        const { data: insertedConv, error: convError } = await supabase
+          .from('conversations')
+          .insert({
+            id: newConvId,
+            account_id: accountId,
+            user_id: user.id,
+            contact_id: contactId,
+            status: 'open',
+            last_message_text: 'Chat created manually.',
+            last_message_at: new Date().toISOString()
+          })
+          .select()
+          .single();
+
+        if (convError) throw convError;
+        conversationId = insertedConv.id;
+      }
+
+      // Add a placeholder message so it loads in inbox
+      const { data: msgs } = await supabase
+        .from('messages')
+        .select('id')
+        .eq('conversation_id', conversationId)
+        .limit(1);
+
+      if (!msgs || msgs.length === 0) {
+        const { error: msgErr } = await supabase
+          .from('messages')
+          .insert({
+            id: window.crypto.randomUUID(),
+            conversation_id: conversationId,
+            sender_type: 'customer',
+            content_type: 'text',
+            content_text: 'Chat created manually.',
+            status: 'read'
+          });
+        if (msgErr) throw msgErr;
+      }
+
+      toast.success("Chat created successfully!");
+      setShowNewChatModal(false);
+      setNewPhone("");
+      setNewName("");
+      
+      // Reload page to reflect changes instantly in the list
+      window.location.reload();
+    } catch (err: any) {
+      console.error("Failed to create new chat:", err);
+      toast.error(err.message || "Failed to create chat");
+    } finally {
+      setIsCreating(false);
+    }
+  };
 
   // Keep the latest callback in a ref so the fetch effect below can
   // have a stable, empty-dep identity. Previously the fetch useCallback
@@ -155,14 +280,25 @@ export function ConversationList({
     <div className="flex h-full w-full flex-col border-r border-border bg-card lg:w-80">
       {/* Search + Filter */}
       <div className="space-y-2 border-b border-border p-3">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={handleSearchChange}
-            placeholder="Search conversations..."
-            className="border-border bg-muted pl-9 text-sm text-foreground placeholder-muted-foreground focus:border-primary/50"
-          />
+        <div className="flex gap-2 items-center">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={handleSearchChange}
+              placeholder="Search conversations..."
+              className="border-border bg-muted pl-9 text-sm text-foreground placeholder-muted-foreground focus:border-primary/50"
+            />
+          </div>
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-9 w-9 shrink-0 border-border text-muted-foreground hover:text-foreground hover:bg-muted"
+            title="Create New Chat"
+            onClick={() => setShowNewChatModal(true)}
+          >
+            <Plus className="h-4 w-4" />
+          </Button>
         </div>
 
         <DropdownMenu>
@@ -220,6 +356,60 @@ export function ConversationList({
           </div>
         )}
       </ScrollArea>
+
+      {showNewChatModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm bg-[#161c2c] border border-gray-800 rounded-xl shadow-2xl p-6 relative">
+            <button 
+              type="button"
+              onClick={() => setShowNewChatModal(false)}
+              className="absolute right-4 top-4 text-gray-500 hover:text-white"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <h3 className="text-lg font-semibold text-white mb-2">Create New Chat</h3>
+            <p className="text-xs text-gray-400 mb-4">Add a custom phone number to start sending templates directly from WACRM.</p>
+            <form onSubmit={handleCreateNewChatSubmit} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-gray-300">Phone Number</label>
+                <Input 
+                  value={newPhone}
+                  onChange={(e) => setNewPhone(e.target.value)}
+                  placeholder="e.g. +1 212-587-8459"
+                  className="bg-[#0b0e14] border-gray-800 text-white placeholder-gray-600 focus:border-primary"
+                  required
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-gray-300">Name / Business Name (Optional)</label>
+                <Input 
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  placeholder="e.g. Elegant Stitch Kuwait"
+                  className="bg-[#0b0e14] border-gray-800 text-white placeholder-gray-600 focus:border-primary"
+                />
+              </div>
+              <div className="pt-2 flex justify-end gap-2">
+                <Button 
+                  type="button" 
+                  variant="ghost" 
+                  onClick={() => setShowNewChatModal(false)}
+                  className="text-gray-400 hover:text-white hover:bg-transparent"
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  type="submit" 
+                  disabled={isCreating}
+                  className="bg-primary text-primary-foreground hover:bg-primary/90 font-semibold"
+                >
+                  {isCreating ? "Creating..." : "Create Chat"}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
