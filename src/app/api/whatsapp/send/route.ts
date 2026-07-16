@@ -259,8 +259,8 @@ export async function POST(request: Request) {
 
     if (message_type === 'template' && effectiveTemplateName) {
       const oldOutreachTemplates = ['website_outreach_soft', 'website_outreach_video', 'website_outreach'];
-      if (accountId === 'fe7c308b-d9c0-49b5-af12-362f5620757a' && (oldOutreachTemplates.includes(effectiveTemplateName) || effectiveTemplateName === 'nexvora_last_hope')) {
-        effectiveTemplateName = 'nexvora_last_hope';
+      if (accountId === 'fe7c308b-d9c0-49b5-af12-362f5620757a' && (oldOutreachTemplates.includes(effectiveTemplateName) || effectiveTemplateName === 'nexvora_template')) {
+        effectiveTemplateName = 'nexvora_template';
         effectiveTemplateLanguage = 'en';
         const contactDisplayName = resolveContactDisplayName(
           Array.isArray(template_message_params?.body) ? template_message_params.body[0] : null,
@@ -275,7 +275,7 @@ export async function POST(request: Request) {
           body: [contactDisplayName]
         };
         effectiveTemplateParams = [contactDisplayName];
-        console.log(`[whatsapp/send] Intercepted outreach template '${template_name}' -> rewriting to 'nexvora_last_hope' with param: ${contactDisplayName}`);
+        console.log(`[whatsapp/send] Intercepted outreach template '${template_name}' -> rewriting to 'nexvora_template' with param: ${contactDisplayName}`);
       }
 
       let { data } = await supabase
@@ -313,8 +313,8 @@ export async function POST(request: Request) {
       if (templateRow && templateRow.header_type === 'video' && (!finalMessageParams || !finalMessageParams.headerMediaUrl)) {
         console.log(`[whatsapp/send] Video template '${effectiveTemplateName || template_name}' requested without headerMediaUrl. Resolving fallback...`);
         let fallbackUrl = templateRow.header_media_url;
-        if (!fallbackUrl && (effectiveTemplateName === 'nexvora_last_hope' || template_name === 'nexvora_last_hope')) {
-          fallbackUrl = 'https://scontent.whatsapp.net/v/t61.29466-34/680354586_2172082376974105_4020584962587637279_n.mp4?ccb=1-7&_nc_sid=8b1bef&_nc_ohc=qBVYMsFctVYQ7kNvwEBFXL7&_nc_oc=Adp_0usPoBv5zVAz8bzB0zbnOQURY7mTDf1VztrkQexOSPeGm1QNCe9vit5Wckpb7Ak&_nc_zt=28&_nc_ht=scontent.whatsapp.net&edm=AH51TzQEAAAA&_nc_gid=eyifQPlM104Le9yK0AGkcw&_nc_tpa=Q5bMBQHBjS_y_nSx6ZuXbiU7ugQzMyE99HSJkzH_O1iJgyZm59P69gsa4W_iS8DBfX-zz7SOUMIC_rYdDQ&oh=01_Q5Aa5AEeYfRJcFRDaGjcYbjNteAtPlZtK3SUu52KEm0D5aTLJw&oe=6A77E10B';
+        if (!fallbackUrl && (effectiveTemplateName === 'nexvora_template' || template_name === 'nexvora_template')) {
+          fallbackUrl = 'https://scontent.whatsapp.net/v/t61.29466-34/621463772_1021390310614370_5873646268822855403_n.mp4?ccb=1-7&_nc_sid=8b1bef&_nc_ohc=c6gnz-3uFRwQ7kNvwES3hik&_nc_oc=AdpNhbqFqoRx5wEKbrEE8c2aMeZLLxnMmyh_PYpAiSNb4rweT_ZAHHJeWJxoo8S9iCg&_nc_zt=28&_nc_ht=scontent.whatsapp.net&edm=AH51TzQEAAAA&_nc_gid=iFSdhfMeQOvJxLSPXe_u2w&_nc_tpa=Q5bMBQFeSHKU_Bls6TNfEvdQo7rc9lwirm9m1SQzTkG3AlcfIWLubPcsI9vBW7voEOtsP9KyjfSLr0Gv1w&oh=01_Q5Aa5AH-zXqM8cr0_oMz5-9IHxwKQSHu7NcJtkcrBVndJKe8Gg&oe=6A8073BB';
         }
         if (!fallbackUrl) {
           const { data: recentMediaMsg } = await supabase

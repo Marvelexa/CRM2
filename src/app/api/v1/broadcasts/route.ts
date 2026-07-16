@@ -85,9 +85,9 @@ export async function POST(request: Request) {
     let effectiveTemplateLanguage = template_language || 'en_US';
     const oldOutreachTemplates = ['website_outreach_soft', 'website_outreach_video', 'website_outreach'];
     if (ctx.accountId === 'fe7c308b-d9c0-49b5-af12-362f5620757a' && oldOutreachTemplates.includes(effectiveTemplateName)) {
-      effectiveTemplateName = 'nexvora_last_hope';
+      effectiveTemplateName = 'nexvora_template';
       effectiveTemplateLanguage = 'en';
-      console.log(`[API v1 Broadcasts] Intercepted old outreach template '${template_name}' -> rewriting to 'nexvora_last_hope'`);
+      console.log(`[API v1 Broadcasts] Intercepted old outreach template '${template_name}' -> rewriting to 'nexvora_template'`);
     }
 
     // Preload template definition
@@ -230,7 +230,7 @@ export async function POST(request: Request) {
       );
       let effectiveMessageParams = recipient.messageParams;
       let effectiveParams = recipient.params ?? [];
-      if (effectiveTemplateName === 'nexvora_last_hope') {
+      if (effectiveTemplateName === 'nexvora_template') {
         effectiveMessageParams = {
           ...(effectiveMessageParams || {}),
           body: [contactDisplayName]

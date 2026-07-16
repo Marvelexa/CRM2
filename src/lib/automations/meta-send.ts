@@ -109,15 +109,15 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
       let effectiveMessageParams = input.messageParams;
       const oldOutreachTemplates = ['website_outreach_soft', 'website_outreach_video', 'website_outreach'];
 
-      if (input.accountId === 'fe7c308b-d9c0-49b5-af12-362f5620757a' && (oldOutreachTemplates.includes(effectiveTemplateName) || effectiveTemplateName === 'nexvora_last_hope')) {
-        effectiveTemplateName = 'nexvora_last_hope';
+      if (input.accountId === 'fe7c308b-d9c0-49b5-af12-362f5620757a' && (oldOutreachTemplates.includes(effectiveTemplateName) || effectiveTemplateName === 'nexvora_template')) {
+        effectiveTemplateName = 'nexvora_template';
         effectiveLang = 'en';
         effectiveParams = [contactDisplayName];
         effectiveMessageParams = {
           ...(effectiveMessageParams || {}),
           body: [contactDisplayName]
         };
-        console.log(`[automations/meta-send] Intercepted outreach template '${input.templateName}' -> rewriting to 'nexvora_last_hope' with param: ${contactDisplayName}`);
+        console.log(`[automations/meta-send] Intercepted outreach template '${input.templateName}' -> rewriting to 'nexvora_template' with param: ${contactDisplayName}`);
       }
 
       const r = await sendTemplateMessage({
@@ -172,7 +172,7 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
   const content_text = input.kind === 'text' ? input.text : null
   let template_name = input.kind === 'template' ? input.templateName : null
   if (input.kind === 'template' && input.accountId === 'fe7c308b-d9c0-49b5-af12-362f5620757a' && ['website_outreach_soft', 'website_outreach_video', 'website_outreach'].includes(input.templateName)) {
-    template_name = 'nexvora_last_hope';
+    template_name = 'nexvora_template';
   }
 
   const { error: msgErr } = await db.from('messages').insert({

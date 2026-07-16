@@ -237,7 +237,7 @@ export async function POST(request: Request) {
         .from('message_templates')
         .select('*')
         .eq('account_id', ctx.accountId)
-        .eq('name', 'nexvora_last_hope')
+        .eq('name', 'nexvora_template')
         .in('language', ['en', 'en_US'])
         .maybeSingle();
 
@@ -251,14 +251,14 @@ export async function POST(request: Request) {
           Array.isArray(template_params) ? template_params[0] : null,
           contact.name
         );
-        const effectiveMediaUrl = media_url || hopeTemplate.header_media_url || 'https://scontent.whatsapp.net/v/t61.29466-34/680354586_2172082376974105_4020584962587637279_n.mp4?ccb=1-7&_nc_sid=8b1bef&_nc_ohc=qBVYMsFctVYQ7kNvwEBFXL7&_nc_oc=Adp_0usPoBv5zVAz8bzB0zbnOQURY7mTDf1VztrkQexOSPeGm1QNCe9vit5Wckpb7Ak&_nc_zt=28&_nc_ht=scontent.whatsapp.net&edm=AH51TzQEAAAA&_nc_gid=eyifQPlM104Le9yK0AGkcw&_nc_tpa=Q5bMBQHBjS_y_nSx6ZuXbiU7ugQzMyE99HSJkzH_O1iJgyZm59P69gsa4W_iS8DBfX-zz7SOUMIC_rYdDQ&oh=01_Q5Aa5AEeYfRJcFRDaGjcYbjNteAtPlZtK3SUu52KEm0D5aTLJw&oe=6A77E10B';
+        const effectiveMediaUrl = media_url || hopeTemplate.header_media_url || 'https://scontent.whatsapp.net/v/t61.29466-34/621463772_1021390310614370_5873646268822855403_n.mp4?ccb=1-7&_nc_sid=8b1bef&_nc_ohc=c6gnz-3uFRwQ7kNvwES3hik&_nc_oc=AdpNhbqFqoRx5wEKbrEE8c2aMeZLLxnMmyh_PYpAiSNb4rweT_ZAHHJeWJxoo8S9iCg&_nc_zt=28&_nc_ht=scontent.whatsapp.net&edm=AH51TzQEAAAA&_nc_gid=iFSdhfMeQOvJxLSPXe_u2w&_nc_tpa=Q5bMBQFeSHKU_Bls6TNfEvdQo7rc9lwirm9m1SQzTkG3AlcfIWLubPcsI9vBW7voEOtsP9KyjfSLr0Gv1w&oh=01_Q5Aa5AH-zXqM8cr0_oMz5-9IHxwKQSHu7NcJtkcrBVndJKe8Gg&oe=6A8073BB';
         finalTemplateMessageParams = {
           body: [contactDisplayName],
           headerMediaUrl: effectiveMediaUrl
         };
         finalTemplateParams = [contactDisplayName];
-        let rawBody = hopeTemplate.body_text || `Hi {{1}} 👋\n\nI created this *personalized website concept* after exploring your business and recorded a *30-second preview* just for you.\n\nI'd genuinely love to hear your *honest feedback*. If you'd like a similar website for your business, simply tap one of the options below. 😊`;
-        finalContentText = rawBody.replace(/\{\{1\}\}/g, contactDisplayName);
+        let rawBody = hopeTemplate.body_text || `Hi, Prince from Nexvora here.\n\nI came across {{company_name}} and noticed your products have strong potential, but your online presence could do more to turn visitors into customers.\n\nI created a quick demo showing how a premium website experience could help your brand look more professional and make buying easier.\n\nI’ve attached it — can I share a few ideas?`;
+        finalContentText = rawBody.replace(/\{\{(?:company_name|1)\}\}/g, contactDisplayName);
         console.log(`[API v1 Messages] Intercepted outreach request/fallback for ${contact.phone} -> force overriding to ${finalTemplateName} with param: ${contactDisplayName}`);
       }
     } else if (!isWindowOpen && (message_type === 'text' || message_type === 'video')) {
