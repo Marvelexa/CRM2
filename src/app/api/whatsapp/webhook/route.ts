@@ -676,9 +676,10 @@ function getCountryPricingSummary(country: string): string {
     case "Saudi Arabia":
     case "Qatar":
     case "Kuwait":
-    case "Bahrain":
     case "Oman":
       return `*💎 Starter - AED 1,499*\n• Up to 5 Premium Pages, Mobile Optimized\n\n*🚀 Growth - AED 2,499 (Most Popular)*\n• Up to 15 Pages, Animations, Lead Capture, Analytics\n\n*🛍️ Professional - AED 3,999*\n• Full E-commerce / Booking System\n\n*👑 Enterprise - AED 6,999+*\n• Custom UI/UX, AI Chatbot & CRM Integration`;
+    case "Bahrain":
+      return `*💎 Starter - 299 BHD*\n• Up to 5 Premium Pages, Mobile Optimized\n\n*🚀 Growth - 599 BHD (Most Popular)*\n• Up to 15 Pages, Animations, Lead Capture, Analytics\n\n*🛍️ Professional - 999 BHD*\n• Full E-commerce / Booking System\n\n*👑 Enterprise - 1499-2999+ BHD*\n• Custom UI/UX, AI Chatbot & CRM Integration`;
     default:
       return `*💎 Starter - $299*\n• Up to 5 Premium Pages, Mobile & Tablet Optimized\n• Contact Form & WhatsApp Chat Button\n• Basic SEO & SSL Security Setup\n• 30 Days Free Support\n\n*🚀 Growth - $599 (Most Popular)*\n• Up to 15 Pages + Product/Service Catalog\n• Advanced UI/UX & Premium Animations\n• Lead Capture Forms & Analytics\n• Speed & Image Optimization\n• 60 Days Free Support\n\n*🛍️ Professional - $999*\n• Full E-commerce / Booking System\n• Secure Checkout & Payment Gateway\n• Customer Login & Management System\n• 90 Days Free Support\n\n*👑 Enterprise - $1,500+*\n• Custom UI/UX, AI Chatbot & CRM Integration`;
   }
@@ -1003,7 +1004,7 @@ You must quote prices strictly from this table based on the customer's detected 
 - Qatar (QAR): Starter QAR799 | Growth QAR1,599 | Professional QAR2,699 | Enterprise QAR3,999+
 - Oman (OMR): Starter OMR79 | Growth OMR159 | Professional OMR269 | Enterprise OMR399+
 - Kuwait (KWD): Starter KWD130 | Growth KWD300 | Professional KWD600 (💡 Note: The video sample we shared is an example of a 600 KWD project) | Enterprise KWD1,050+
-- Bahrain (BHD): Starter BHD79 | Growth BHD159 | Professional BHD269 | Enterprise BHD399+
+- Bahrain (BHD): Starter 299 BHD | Growth 599 BHD | Professional 999 BHD | Enterprise 1499-2999+ BHD
 - Malaysia (MYR): Starter RM449 | Growth RM899 | Professional RM1,499 | Enterprise RM2,299+
 - Thailand (THB): Starter ฿3,999 | Growth ฿7,999 | Professional ฿13,999 | Enterprise ฿19,999+
 - Philippines (PHP): Starter ₱5,999 | Growth ₱11,999 | Professional ₱19,999 | Enterprise ₱29,999+

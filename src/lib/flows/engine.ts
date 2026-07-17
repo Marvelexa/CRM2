@@ -615,6 +615,8 @@ async function advanceFromNodeKey(
             p1 = "₹24,999"; p2 = "₹49,999"; p3 = "₹82,999"; p4 = "₹1,24,999+";
           } else if (city.includes("Kuwait") || city.includes("कुवैत")) {
             p1 = "64 KWD"; p2 = "129 KWD"; p3 = "219 KWD"; p4 = "329+ KWD";
+          } else if (city.includes("Bahrain") || city.includes("बहरीन") || city.includes("البحرين")) {
+            p1 = "299 BHD"; p2 = "599 BHD"; p3 = "999 BHD"; p4 = "1499-2999+ BHD";
           } else if (
             city.includes("UAE") || 
             city.includes("United Arab Emirates") || 
