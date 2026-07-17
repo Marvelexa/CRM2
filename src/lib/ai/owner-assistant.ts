@@ -326,7 +326,7 @@ export async function handleOwnerAssistantQuery({
     }
 
     // ============================================================
-    // 3) ROUTE OWNER INTENT
+    // 3) ROUTE OWNER INTENT OR EXECUTE ACTION COMMANDS
     // ============================================================
     const cleanText = inboundText.trim().toLowerCase();
     const isGreeting = ['hi', 'hello', 'hey', 'start', 'help', 'namaste'].includes(cleanText);
@@ -337,9 +337,175 @@ export async function handleOwnerAssistantQuery({
     const isFlowRequest = /flow|automation|bot performance|chatbot|funnel|completion rate/i.test(cleanText);
     const isStrategyRequest = /strategy|kaise close|how to close|follow.?up|objection|deal close|sales tip|convert kaise|closing technique|psychology/i.test(cleanText);
 
+    // Check if the owner is giving an ACTION instruction (send message, broadcast, tag, follow up)
+    const isActionCommand = /send|bhej|do message|bhejo|give them a message|follow.?up|tag add|tag remove|change status/i.test(cleanText);
+
     let replyText = '';
 
-    if (isGreeting) {
+    if (isActionCommand && !isGreeting && !isSummaryRequest) {
+      console.log(`[Owner Assistant V2] Executing action command: "${inboundText}"`);
+      
+      // Determine target audience
+      let targetContacts: { convId: string; name: string; phone: string; company?: string }[] = [];
+      let segmentName = 'Selected Leads';
+
+      if (/saw.*reply|seen.*reply|read.*reply|saw.*no reply|seen.*no reply|dekha.*reply/i.test(cleanText)) {
+        segmentName = 'Saw Reply / Read But No Reply Yet';
+        for (const c of convList) {
+          const info = contactMap.get(c.id);
+          if (info && !isOwnerPhone(info.phone).isOwner && !seenRepliedContacts.has(info.phone)) {
+            if (c.unread_count === 0 && info.lastMessageText) {
+              targetContacts.push({ convId: c.id, name: info.name, phone: info.phone, company: info.company });
+            }
+          }
+        }
+        // If unread_count === 0 check yields fewer results, fallback to all pending with delivered/read message
+        if (targetContacts.length === 0) {
+          for (const c of convList) {
+            const info = contactMap.get(c.id);
+            if (info && !isOwnerPhone(info.phone).isOwner && !seenRepliedContacts.has(info.phone) && info.lastMessageText) {
+              targetContacts.push({ convId: c.id, name: info.name, phone: info.phone, company: info.company });
+            }
+          }
+        }
+      } else if (/hot/i.test(cleanText)) {
+        segmentName = 'Hot Leads 🔥';
+        for (const c of convList) {
+          const info = contactMap.get(c.id);
+          if (info && !isOwnerPhone(info.phone).isOwner) {
+            const repliedRecently = seenRepliedContacts.has(info.phone);
+            const customerMsgCount = recentCustomerMessages.filter((m: any) => m.conversation_id === c.id).length;
+            const lastActiveHoursAgo = info.lastMessageAt ? Math.round((now.getTime() - new Date(info.lastMessageAt).getTime()) / (1000 * 60 * 60)) : 999;
+            const clickedInterested = (info.lastMessageText || '').toLowerCase().includes('interested');
+            if (scoreLeadFromSignals({ repliedRecently, messageCount: customerMsgCount, lastActiveHoursAgo, clickedInterested }) === 'HOT 🔥') {
+              targetContacts.push({ convId: c.id, name: info.name, phone: info.phone, company: info.company });
+            }
+          }
+        }
+      } else if (/warm/i.test(cleanText)) {
+        segmentName = 'Warm Leads 🌤️';
+        for (const c of convList) {
+          const info = contactMap.get(c.id);
+          if (info && !isOwnerPhone(info.phone).isOwner) {
+            const repliedRecently = seenRepliedContacts.has(info.phone);
+            const customerMsgCount = recentCustomerMessages.filter((m: any) => m.conversation_id === c.id).length;
+            const lastActiveHoursAgo = info.lastMessageAt ? Math.round((now.getTime() - new Date(info.lastMessageAt).getTime()) / (1000 * 60 * 60)) : 999;
+            const clickedInterested = (info.lastMessageText || '').toLowerCase().includes('interested');
+            if (scoreLeadFromSignals({ repliedRecently, messageCount: customerMsgCount, lastActiveHoursAgo, clickedInterested }) === 'WARM 🌤️') {
+              targetContacts.push({ convId: c.id, name: info.name, phone: info.phone, company: info.company });
+            }
+          }
+        }
+      } else if (/cold/i.test(cleanText)) {
+        segmentName = 'Cold Leads 🧊';
+        for (const c of convList) {
+          const info = contactMap.get(c.id);
+          if (info && !isOwnerPhone(info.phone).isOwner) {
+            const repliedRecently = seenRepliedContacts.has(info.phone);
+            const customerMsgCount = recentCustomerMessages.filter((m: any) => m.conversation_id === c.id).length;
+            const lastActiveHoursAgo = info.lastMessageAt ? Math.round((now.getTime() - new Date(info.lastMessageAt).getTime()) / (1000 * 60 * 60)) : 999;
+            const clickedInterested = (info.lastMessageText || '').toLowerCase().includes('interested');
+            if (scoreLeadFromSignals({ repliedRecently, messageCount: customerMsgCount, lastActiveHoursAgo, clickedInterested }) === 'COLD 🧊') {
+              targetContacts.push({ convId: c.id, name: info.name, phone: info.phone, company: info.company });
+            }
+          }
+        }
+      } else if (/pending|no reply|didn'?t reply/i.test(cleanText)) {
+        segmentName = 'Pending Leads (No Reply Yet)';
+        for (const c of convList) {
+          const info = contactMap.get(c.id);
+          if (info && !isOwnerPhone(info.phone).isOwner && !seenRepliedContacts.has(info.phone) && info.lastMessageText) {
+            targetContacts.push({ convId: c.id, name: info.name, phone: info.phone, company: info.company });
+          }
+        }
+      } else {
+        // Fallback to all non-owner active contacts
+        segmentName = 'Active Leads';
+        for (const c of convList) {
+          const info = contactMap.get(c.id);
+          if (info && !isOwnerPhone(info.phone).isOwner) {
+            targetContacts.push({ convId: c.id, name: info.name, phone: info.phone, company: info.company });
+          }
+        }
+      }
+
+      // Extract custom message text if provided in quotes or after colon/saying
+      let customMessage = '';
+      const quoteMatch = inboundText.match(/["'](.+)["']/);
+      if (quoteMatch && quoteMatch[1]) {
+        customMessage = quoteMatch[1].trim();
+      } else {
+        const sayingMatch = inboundText.match(/(?:saying|message|bhej do|msg do|give them a message)[:\s]+(.+)$/i);
+        if (sayingMatch && sayingMatch[1]) {
+          customMessage = sayingMatch[1].trim();
+        }
+      }
+
+      // Limit to 20 leads at once for safety
+      const leadsToMessage = targetContacts.slice(0, 20);
+
+      if (leadsToMessage.length === 0) {
+        replyText = `ℹ️ *Action Execution Update:* No contacts found matching the segment *"${segmentName}"* right now.\n\nAll contacts in this category have either already responded or don't have pending messages.`;
+      } else {
+        // Generate or use exact message
+        let finalMsgTemplate = customMessage;
+        if (!finalMsgTemplate) {
+          const aiGenPrompt = `Generate a high-converting, polite 2-paragraph WhatsApp follow-up message from ${ownerName} (${ownerType === 'loanplus' ? 'Loan plus+ Financial Consulting' : 'Nexvora Website Solutions'}) to a customer who ${segmentName}. Use Cialdini's Reciprocity/Scarcity and SPIN selling to encourage them to reply. Do not include placeholders like [Name]. Keep it natural, friendly, and professional.`;
+          try {
+            finalMsgTemplate = (await generateAIReply(`Create follow-up for ${segmentName}`, aiGenPrompt)) || `Hi! Just checking in to see if you had any questions regarding our previous discussion? We would love to help your business grow. Let us know!`;
+          } catch (e) {
+            finalMsgTemplate = `Hi! Just checking in to see if you had any questions regarding our previous discussion? We would love to help your business grow. Let us know!`;
+          }
+        }
+
+        let sentCount = 0;
+        let failedCount = 0;
+        const sentNames: string[] = [];
+
+        for (const lead of leadsToMessage) {
+          try {
+            const result = await sendTextMessage({
+              phoneNumberId,
+              accessToken,
+              to: lead.phone,
+              text: finalMsgTemplate
+            });
+
+            if (result && (result.messageId || result.success !== false)) {
+              sentCount++;
+              sentNames.push(lead.name);
+
+              await supabaseAdmin
+                .from('messages')
+                .insert({
+                  conversation_id: lead.convId,
+                  sender_type: 'bot',
+                  content_type: 'text',
+                  content_text: finalMsgTemplate,
+                  status: 'delivered',
+                  created_at: new Date().toISOString()
+                });
+
+              await supabaseAdmin
+                .from('conversations')
+                .update({
+                  last_message_text: finalMsgTemplate,
+                  last_message_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', lead.convId);
+            } else {
+              failedCount++;
+            }
+          } catch (sendErr) {
+            console.error(`[Owner Assistant V2] Failed sending to ${lead.phone}:`, sendErr);
+            failedCount++;
+          }
+        }
+
+        replyText = `🚀 *CRM ACTION EXECUTED SUCCESSFULLY!*\n\n🎯 *Segment:* ${segmentName}\n✅ *Sent:* ${sentCount} messages\n❌ *Failed:* ${failedCount}\n\n💬 *Message Sent:*\n"${finalMsgTemplate}"\n\n👥 *Recipients:*\n${sentNames.slice(0, 10).map(n => '• ' + n).join('\n')}${sentNames.length > 10 ? `\n...and ${sentNames.length - 10} more` : ''}`;
+      }
+    } else if (isGreeting) {
       replyText = `\uD83D\uDC4B Welcome back, *${ownerName}*! \uD83D\uDC54\uD83D\uDC51\n\nI am your *AI Executive CRM Assistant V2* \u2014 powered with full CRM intelligence, sales psychology, and lead scoring.\n\n\uD83D\uDCCA *Live Dashboard:*\n\u2022 Total Leads: *${totalContacts || 0}*\n\u2022 Replied (48h): *${repliedSummaryList.length}*\n\u2022 Pending Reply: *${noReplyList.length}*\n\u2022 Hot Leads \uD83D\uDD25: *${hotLeads.length}*\n\u2022 Warm Leads \uD83C\uDF24\uFE0F: *${warmLeads.length}*\n\u2022 Cold Leads \uD83E\uDDCA: *${coldLeads.length}*\n\n\uD83D\uDCEC *Message Volume (24h):*\n${messageVolume}\n\n\uD83D\uDCA1 *What would you like?*\n\u2022 *Summary* \u2014 Full executive report\n\u2022 *Hot leads* \u2014 High-intent leads ready to convert\n\u2022 *Pending* \u2014 Who hasn't replied yet\n\u2022 *Broadcast* \u2014 Campaign performance analytics\n\u2022 *Flows* \u2014 Automation completion rates\n\u2022 *Strategy* \u2014 AI sales psychology advice\n\u2022 Or ask anything: "Rahul ne kya bola?", "Give me closing script"`;
     } else if (isSummaryRequest) {
       const repliedSection = repliedSummaryList.length > 0
