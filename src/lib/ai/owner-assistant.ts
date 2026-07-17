@@ -471,7 +471,7 @@ export async function handleOwnerAssistantQuery({
               text: finalMsgTemplate
             });
 
-            if (result && (result.messageId || result.success !== false)) {
+            if (result && result.messageId) {
               sentCount++;
               sentNames.push(lead.name);
 
