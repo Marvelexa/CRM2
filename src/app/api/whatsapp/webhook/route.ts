@@ -766,7 +766,7 @@ async function handleOutreachFlow(args: {
 
   // 2) Choose Package / Price button clicked
   if (/^(choose_package|choose package|select package|select plan|proceed|interested|starter|growth|professional|enterprise)$/i.test(triggerInput)) {
-    const replyText = "Thank you so much for your interest! 🙏✨\n\nOur expert team will connect with you very soon to discuss your specific requirements, finalize your package, and get your premium website live in record time!\n\nIn the meantime, feel free to explore our live design concepts and portfolio below:";
+    const replyText = "Thank you so much for your interest! 😊✨\n\nOur expert team will connect with you very soon to discuss your specific requirements, finalize your package, and get your premium website live in record time!\n\nIn the meantime, feel free to explore our live design concepts and portfolio below:";
     try {
       const txtResult = await sendTextMessage({
         phoneNumberId,
@@ -825,7 +825,7 @@ async function handleOutreachFlow(args: {
 
   // 4) Not interested clicked
   if (/^(not_interested|not interested|no thanks|no needed)$/i.test(triggerInput)) {
-    const replyText = "Thank you so much for your honest feedback! 🙏\n\nWe are constantly working to improve our services and designs. We will always be right here whenever you need us in the future for any website or digital solutions.\n\nWishing you and your business immense success and growth ahead! 😊🌟";
+    const replyText = "Thank you so much for your honest feedback! 😊\n\nWe are constantly working to improve our services and designs. We will always be right here whenever you need us in the future for any website or digital solutions.\n\nWishing you and your business immense success and growth ahead! 😊🌟";
     try {
       const txtResult = await sendTextMessage({
         phoneNumberId,
@@ -984,7 +984,7 @@ async function handleLoanPlusFlow(args: {
   // STEP 1: "Call To Advisor" button clicked OR any time they click call advisor
   // ------------------------------------------------------------
   if (/^(call_to_advisor|call to advisor|call pe baat|call pe baat karne par|btn_call_advisor)$/i.test(triggerInput)) {
-    const replyText = "🙏 Interest dikhane ke liye Thank you ham jaldi aapko sampark karenge.";
+    const replyText = "😊 Interest dikhane ke liye Thank you ham jaldi aapko sampark karenge.";
     try {
       const txtResult = await sendTextMessage({
         phoneNumberId,
@@ -1003,7 +1003,7 @@ async function handleLoanPlusFlow(args: {
   // STEP 2: "I want Loan" clicked -> Ask Language selection (Gujarati, Hindi, English, Tamil)
   // ------------------------------------------------------------
   if (/^(i_want_loan|i want loan|loan chahiye|apply loan|get loan|loan)$/i.test(triggerInput)) {
-    const bodyText = "🙏 Welcome to *Loan plus+*! Kripya apni bhasha chunein / Please select your preferred language:";
+    const bodyText = "😊 Welcome to *Loan plus+*! Kripya apni bhasha chunein / Please select your preferred language:";
     try {
       // Use interactive list because there are 4 options (buttons max is 3)
       const listResult = await sendInteractiveList({
@@ -1039,11 +1039,11 @@ async function handleLoanPlusFlow(args: {
   if (/^(lang_gujarati|lang_hindi|lang_english|lang_tamil|gujarati|hindi|english|tamil)$/i.test(triggerInput) || (lastBotMsgText.includes('bhasha chunein') || lastBotMsgText.includes('select your preferred language'))) {
     // Make sure it's not another option triggered
     if (!/^(call_to_advisor|i_want_loan|btn_call_advisor)$/i.test(triggerInput)) {
-      let bodyText = "🙏 Dhanyawad! Kya aap kuch sawal ke jawab de sakte hai taaki ham aapko best loan offer de sakein?";
+      let bodyText = "😊 Dhanyawad! Kya aap kuch sawal ke jawab de sakte hai taaki ham aapko best loan offer de sakein?";
       let btn1 = 'Ji haa puchiye';
       let btn2 = 'Call pe baat kare';
       if (userLang === 'gujarati') {
-        bodyText = "🙏 ધન્યવાદ! શું તમે કેટલાક પ્રશ્નોના જવાબ આપી શકો છો જેથી અમે તમને શ્રેષ્ઠ લોન ઓફર આપી શકીએ?";
+        bodyText = "😊 ધન્યવાદ! શું તમે કેટલાક પ્રશ્નોના જવાબ આપી શકો છો જેથી અમે તમને શ્રેષ્ઠ લોન ઓફર આપી શકીએ?";
         btn1 = 'હા, પૂછો';
         btn2 = 'કોલ પર વાત કરો';
       }
@@ -1143,7 +1143,7 @@ async function handleLoanPlusFlow(args: {
   // Reply: "Aap loan ke liye aligeable nhi hai interest dikhane ke liye thank you"
   // ------------------------------------------------------------
   if (/^(sal_lt_15k|no|nahi)$/i.test(triggerInput) && lastBotMsgText.includes('15,000 se jyada')) {
-    const replyText = userLang === 'gujarati' ? "🙏 તમે લોન માટે પાત્ર નથી, રસ દાખવવા બદલ આભાર." : "🙏 Aap loan ke liye aligeable nhi hai interest dikhane ke liye thank you.";
+    const replyText = userLang === 'gujarati' ? "😊 તમે લોન માટે પાત્ર નથી, રસ દાખવવા બદલ આભાર." : "😊 Aap loan ke liye aligeable nhi hai interest dikhane ke liye thank you.";
     try {
       const txtResult = await sendTextMessage({
         phoneNumberId,
@@ -1212,7 +1212,7 @@ async function handleLoanPlusFlow(args: {
   // ------------------------------------------------------------
   if (/^(loan_home_new|loan_lap|loan_personal|naya ghar kharidne|mere property par|personal loan|naya ghar kharidhne hetu|bina property personal loan)$/i.test(triggerInput) ||
       ((lastBotMsgText.includes('parakar ki loan') || lastBotMsgText.includes('પ્રકારની લોન')) && /^(1|2|3|home|property|personal)$/i.test(triggerInput))) {
-    const replyText = userLang === 'gujarati' ? "🙏 રસ દાખવવા બદલ આભાર, અમે ટૂંક સમયમાં તમારો સંપર્ક કરીશું." : "🙏 Interest dikhane ke liye thank you ham aapko jaldi sampark karenge.";
+    const replyText = userLang === 'gujarati' ? "😊 રસ દાખવવા બદલ આભાર, અમે ટૂંક સમયમાં તમારો સંપર્ક કરીશું." : "😊 Interest dikhane ke liye thank you ham aapko jaldi sampark karenge.";
     try {
       const txtResult = await sendTextMessage({
         phoneNumberId,
@@ -1267,7 +1267,7 @@ async function handleLoanPlusFlow(args: {
   // Reply: "Interest dikhane ke liye thank you ham jaldi aapko sampark karenge"
   // ------------------------------------------------------------
   if (/^(biz_trading|biz_manufacturing|biz_service|trading|manufacturering|manufacturing|service)$/i.test(triggerInput) && (lastBotMsgText.includes('income souce kya hai') || lastBotMsgText.includes('આવકનો સ્ત્રોત'))) {
-    const replyText = userLang === 'gujarati' ? "🙏 રસ દાખવવા બદલ આભાર, અમે ટૂંક સમયમાં તમારો સંપર્ક કરીશું." : "🙏 Interest dikhane ke liye thank you ham jaldi aapko sampark karenge.";
+    const replyText = userLang === 'gujarati' ? "😊 રસ દાખવવા બદલ આભાર, અમે ટૂંક સમયમાં તમારો સંપર્ક કરીશું." : "😊 Interest dikhane ke liye thank you ham jaldi aapko sampark karenge.";
     try {
       const txtResult = await sendTextMessage({
         phoneNumberId,
@@ -1376,7 +1376,7 @@ CORE INTELLIGENCE FRAMEWORKS:
     - STEP 4 (PAYMENT TERMS): After explaining what they get and answering any questions, you must state the payment policy: "We take the first payment before starting the website development, and the final payment after the website is completely built. Do you accept this?"
     - STEP 5 (HANDOFF): If they say "yes" or accept the payment terms, reply exactly with: "Thank you sir/ma'am! Prince sir will connect with you shortly to proceed with the further process."
 12. COMPANY FACTS: Owner of Nexvora is *Prince R Pandey*. Nexvora has *2+ years of experience* and *20+ premium projects* delivered globally.
-13. OPT-OUT / NOT INTERESTED: If the customer says "stop", "not interested", "nahi chahiye", "don't message", or anything similar indicating disinterest, DO NOT ask any further questions, attempt to convince them, or use sales psychology. Simply reply exactly with: "🙏 Sorry for disturbing you. We will not send you any more messages. Have a great day!" and end the conversation.
+13. OPT-OUT / NOT INTERESTED: If the customer says "stop", "not interested", "nahi chahiye", "don't message", or anything similar indicating disinterest, DO NOT ask any further questions, attempt to convince them, or use sales psychology. Simply reply exactly with: "😊 Sorry for disturbing you. We will not send you any more messages. Have a great day!" and end the conversation.
 14. CHAT PREFERENCE: NEVER ask the customer to jump on a phone call, voice call, or video call. If you want to discuss their project further, use your convincing skills and ONLY ask for "10 minutes of your time to chat right here when you are free".
 15. DEVELOPER TEST MODE: If the user says "muje apna flow check karna hai" or anything indicating they are testing their own flow, immediately reply exactly with: "Okay sir, okay, uske baad ham flow ko test kar lenge." DO NOT use any sales psychology or attempt to sell them a website. If they later say "done", reply exactly with: "Ab flow ko rokte hai."
 
