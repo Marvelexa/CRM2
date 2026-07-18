@@ -958,6 +958,28 @@ async function handleLoanPlusFlow(args: {
 
   const lastBotMsgText = (lastBotMessages && lastBotMessages.length > 0 ? (lastBotMessages[0].content_text || '') : (conversation.last_message_text || '')).toLowerCase();
 
+  let userLang = 'hinglish';
+  try {
+    const { data: customerMessages } = await supabaseAdmin()
+      .from('messages')
+      .select('content_text')
+      .eq('conversation_id', conversation.id)
+      .eq('sender_type', 'customer')
+      .order('created_at', { ascending: false })
+      .limit(5);
+    
+    if (customerMessages) {
+      for (const msg of customerMessages) {
+        const t = (msg.content_text || '').toLowerCase();
+        if (t.includes('gujarati') || t === 'lang_gujarati') { userLang = 'gujarati'; break; }
+        if (t.includes('hindi') || t === 'lang_hindi') { userLang = 'hindi'; break; }
+        if (t.includes('english') || t === 'lang_english') { userLang = 'english'; break; }
+        if (t.includes('tamil') || t === 'lang_tamil') { userLang = 'tamil'; break; }
+      }
+    }
+  } catch(e) {}
+
+
   // ------------------------------------------------------------
   // STEP 1: "Call To Advisor" button clicked OR any time they click call advisor
   // ------------------------------------------------------------
@@ -1017,7 +1039,14 @@ async function handleLoanPlusFlow(args: {
   if (/^(lang_gujarati|lang_hindi|lang_english|lang_tamil|gujarati|hindi|english|tamil)$/i.test(triggerInput) || (lastBotMsgText.includes('bhasha chunein') || lastBotMsgText.includes('select your preferred language'))) {
     // Make sure it's not another option triggered
     if (!/^(call_to_advisor|i_want_loan|btn_call_advisor)$/i.test(triggerInput)) {
-      const bodyText = "🙏 Dhanyawad! Kya aap kuch sawal ke jawab de sakte hai taaki ham aapko best loan offer de sakein?";
+      let bodyText = "🙏 Dhanyawad! Kya aap kuch sawal ke jawab de sakte hai taaki ham aapko best loan offer de sakein?";
+      let btn1 = 'Ji haa puchiye';
+      let btn2 = 'Call pe baat kare';
+      if (userLang === 'gujarati') {
+        bodyText = "🙏 ધન્યવાદ! શું તમે કેટલાક પ્રશ્નોના જવાબ આપી શકો છો જેથી અમે તમને શ્રેષ્ઠ લોન ઓફર આપી શકીએ?";
+        btn1 = 'હા, પૂછો';
+        btn2 = 'કોલ પર વાત કરો';
+      }
       try {
         const btnResult = await sendInteractiveButtons({
           phoneNumberId,
@@ -1025,8 +1054,8 @@ async function handleLoanPlusFlow(args: {
           to: contactRecord.phone,
           bodyText,
           buttons: [
-            { id: 'btn_ask_questions', title: 'Ji haa puchiye' },
-            { id: 'btn_call_advisor', title: 'Call pe baat kare' }
+            { id: 'btn_ask_questions', title: btn1 },
+            { id: 'btn_call_advisor', title: btn2 }
           ]
         });
         saveAndSend(bodyText, btnResult.messageId, 'interactive');
@@ -1065,7 +1094,7 @@ async function handleLoanPlusFlow(args: {
   // STEP 5: "Salary" chosen -> Ask "Apko salary kaise milti hai"
   // Options: "Bank Credit" (NEFT aur IMPS) or "Cash"
   // ------------------------------------------------------------
-  if (/^(inc_salary|salary)$/i.test(triggerInput) && !lastBotMsgText.includes('15,000 se jyada')) {
+  if (/^(inc_salary|salary)$/i.test(triggerInput) && !((lastBotMsgText.includes('15,000 se jyada') || lastBotMsgText.includes('15,000 થી વધુ')) || lastBotMsgText.includes('15,000 થી વધુ'))) {
     const bodyText = "💵 Apko salary kaise milti hai?\n\n• *Bank Credit* (NEFT aur IMPS)\n• *Cash*\n\nKripya niche diye gaye button par click karein:";
     try {
       const btnResult = await sendInteractiveButtons({
@@ -1114,7 +1143,7 @@ async function handleLoanPlusFlow(args: {
   // Reply: "Aap loan ke liye aligeable nhi hai interest dikhane ke liye thank you"
   // ------------------------------------------------------------
   if (/^(sal_lt_15k|no|nahi)$/i.test(triggerInput) && lastBotMsgText.includes('15,000 se jyada')) {
-    const replyText = "🙏 Aap loan ke liye aligeable nhi hai interest dikhane ke liye thank you.";
+    const replyText = userLang === 'gujarati' ? "🙏 તમે લોન માટે પાત્ર નથી, રસ દાખવવા બદલ આભાર." : "🙏 Aap loan ke liye aligeable nhi hai interest dikhane ke liye thank you.";
     try {
       const txtResult = await sendTextMessage({
         phoneNumberId,
@@ -1136,7 +1165,7 @@ async function handleLoanPlusFlow(args: {
   // ------------------------------------------------------------
   if ((/^(sal_gt_15k|yes|haa|ha)$/i.test(triggerInput) && lastBotMsgText.includes('15,000 se jyada')) ||
       (/^(sal_cash|cash)$/i.test(triggerInput) && lastBotMsgText.includes('salary kaise milti hai'))) {
-    const bodyText = "🏠 Apko kis parakar ki Loan Chaiye? Kripya niche diye gaye options me se chunein:";
+    const bodyText = userLang === 'gujarati' ? "🏠 તમારે કયા પ્રકારની લોન જોઈએ છે? કૃપા કરીને નીચે આપેલા વિકલ્પોમાંથી પસંદ કરો:" : "🏠 Apko kis parakar ki Loan Chaiye? Kripya niche diye gaye options me se chunein:";
     try {
       // Interactive list because titles/descriptions are long (over 20 chars limit of buttons)
       const listResult = await sendInteractiveList({
@@ -1168,8 +1197,8 @@ async function handleLoanPlusFlow(args: {
   // Reply: "Interest dikhane ke liye thank you ham aapko jaldi sampark karenge"
   // ------------------------------------------------------------
   if (/^(loan_home_new|loan_lap|loan_personal|naya ghar kharidne|mere property par|personal loan|naya ghar kharidhne hetu|bina property personal loan)$/i.test(triggerInput) ||
-      (lastBotMsgText.includes('parakar ki loan') && /^(1|2|3|home|property|personal)$/i.test(triggerInput))) {
-    const replyText = "🙏 Interest dikhane ke liye thank you ham aapko jaldi sampark karenge.";
+      ((lastBotMsgText.includes('parakar ki loan') || lastBotMsgText.includes('પ્રકારની લોન')) && /^(1|2|3|home|property|personal)$/i.test(triggerInput))) {
+    const replyText = userLang === 'gujarati' ? "🙏 રસ દાખવવા બદલ આભાર, અમે ટૂંક સમયમાં તમારો સંપર્ક કરીશું." : "🙏 Interest dikhane ke liye thank you ham aapko jaldi sampark karenge.";
     try {
       const txtResult = await sendTextMessage({
         phoneNumberId,
@@ -1189,8 +1218,14 @@ async function handleLoanPlusFlow(args: {
   // -> Ask "Apka income souce kya hai"
   // Options: "Trading" / "Manufacturering" / "Service"
   // ------------------------------------------------------------
-  if (/^(inc_business|busniess|business|vyapar)$/i.test(triggerInput) && !lastBotMsgText.includes('trading')) {
-    const bodyText = "🏢 Apka income souce kya hai? Kripya niche diye gaye options me se chunein:";
+  if (/^(inc_business|busniess|business|vyapar)$/i.test(triggerInput) && (!lastBotMsgText.includes('trading') && !lastBotMsgText.includes('આવકનો સ્ત્રોત'))) {
+    let bodyText = "🏢 Apka income souce kya hai? Kripya niche diye gaye options me se chunein:";
+    let btn1 = 'Trading';
+    let btn2 = 'Manufacturering';
+    let btn3 = 'Service';
+    if (userLang === 'gujarati') {
+      bodyText = "🏢 તમારો આવકનો સ્ત્રોત શું છે? કૃપા કરીને નીચે આપેલા વિકલ્પોમાંથી પસંદ કરો:";
+    }
     try {
       const btnResult = await sendInteractiveButtons({
         phoneNumberId,
@@ -1198,9 +1233,9 @@ async function handleLoanPlusFlow(args: {
         to: contactRecord.phone,
         bodyText,
         buttons: [
-          { id: 'biz_trading', title: 'Trading' },
-          { id: 'biz_manufacturing', title: 'Manufacturering' },
-          { id: 'biz_service', title: 'Service' }
+          { id: 'biz_trading', title: btn1 },
+          { id: 'biz_manufacturing', title: btn2 },
+          { id: 'biz_service', title: btn3 }
         ]
       });
       saveAndSend(bodyText, btnResult.messageId, 'interactive');
@@ -1214,8 +1249,8 @@ async function handleLoanPlusFlow(args: {
   // STEP 11: Any Business option ("Trading", "Manufacturering", "Service") clicked
   // Reply: "Interest dikhane ke liye thank you ham jaldi aapko sampark karenge"
   // ------------------------------------------------------------
-  if (/^(biz_trading|biz_manufacturing|biz_service|trading|manufacturering|manufacturing|service)$/i.test(triggerInput) && lastBotMsgText.includes('income souce kya hai')) {
-    const replyText = "🙏 Interest dikhane ke liye thank you ham jaldi aapko sampark karenge.";
+  if (/^(biz_trading|biz_manufacturing|biz_service|trading|manufacturering|manufacturing|service)$/i.test(triggerInput) && (lastBotMsgText.includes('income souce kya hai') || lastBotMsgText.includes('આવકનો સ્ત્રોત'))) {
+    const replyText = userLang === 'gujarati' ? "🙏 રસ દાખવવા બદલ આભાર, અમે ટૂંક સમયમાં તમારો સંપર્ક કરીશું." : "🙏 Interest dikhane ke liye thank you ham jaldi aapko sampark karenge.";
     try {
       const txtResult = await sendTextMessage({
         phoneNumberId,
