@@ -1,7 +1,7 @@
 import { NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
-import { getMediaUrl, downloadMedia, sendTextMessage, sendInteractiveCtaUrl, sendInteractiveButtons } from '@/lib/whatsapp/meta-api'
+import { getMediaUrl, downloadMedia, sendTextMessage, sendInteractiveCtaUrl, sendInteractiveButtons, sendInteractiveList } from '@/lib/whatsapp/meta-api'
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
@@ -905,6 +905,334 @@ async function handleOutreachFlow(args: {
   return false;
 }
 
+async function handleLoanPlusFlow(args: {
+  accountId: string
+  conversation: any
+  contactRecord: any
+  inboundText: string
+  interactiveReplyId: string | null
+  accessToken: string
+  phoneNumberId: string
+}): Promise<boolean> {
+  const { accountId, conversation, contactRecord, inboundText, interactiveReplyId, accessToken, phoneNumberId } = args;
+  
+  if (accountId !== '6b428da4-3ce6-47aa-8002-53296da16e9a') return false;
+
+  const triggerInput = (interactiveReplyId || inboundText || '').trim().toLowerCase();
+
+  const saveAndSend = async (text: string, messageId: string, contentType = 'text') => {
+    try {
+      await Promise.all([
+        supabaseAdmin()
+          .from('messages')
+          .insert({
+            conversation_id: conversation.id,
+            sender_type: 'bot',
+            content_type: contentType,
+            content_text: text,
+            message_id: messageId,
+            status: 'sent',
+          }),
+        supabaseAdmin()
+          .from('conversations')
+          .update({
+            last_message_text: text,
+            last_message_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', conversation.id),
+      ]);
+    } catch (e) {
+      console.error('[webhook] Error saving LoanPlus flow reply:', e);
+    }
+  };
+
+  // Get last bot message to check context/state
+  const { data: lastBotMessages } = await supabaseAdmin()
+    .from('messages')
+    .select('content_text')
+    .eq('conversation_id', conversation.id)
+    .eq('sender_type', 'bot')
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  const lastBotMsgText = (lastBotMessages && lastBotMessages.length > 0 ? (lastBotMessages[0].content_text || '') : (conversation.last_message_text || '')).toLowerCase();
+
+  // ------------------------------------------------------------
+  // STEP 1: "Call To Advisor" button clicked OR any time they click call advisor
+  // ------------------------------------------------------------
+  if (/^(call_to_advisor|call to advisor|call pe baat|call pe baat karne par|btn_call_advisor)$/i.test(triggerInput)) {
+    const replyText = "🙏 Interest dikhane ke liye Thank you ham jaldi aapko sampark karenge.";
+    try {
+      const txtResult = await sendTextMessage({
+        phoneNumberId,
+        accessToken,
+        to: contactRecord.phone,
+        text: replyText
+      });
+      saveAndSend(replyText, txtResult.messageId);
+    } catch (err) {
+      console.error('[webhook] Error in LoanPlus Call Advisor flow:', err);
+    }
+    return true;
+  }
+
+  // ------------------------------------------------------------
+  // STEP 2: "I want Loan" clicked -> Ask Language selection (Gujarati, Hindi, English, Tamil)
+  // ------------------------------------------------------------
+  if (/^(i_want_loan|i want loan|loan chahiye|apply loan|get loan|loan)$/i.test(triggerInput)) {
+    const bodyText = "🙏 Welcome to *Loan plus+*! Kripya apni bhasha chunein / Please select your preferred language:";
+    try {
+      // Use interactive list because there are 4 options (buttons max is 3)
+      const listResult = await sendInteractiveList({
+        phoneNumberId,
+        accessToken,
+        to: contactRecord.phone,
+        bodyText,
+        buttonLabel: "Select Language",
+        sections: [
+          {
+            title: "Language / Bhasha",
+            rows: [
+              { id: 'lang_gujarati', title: 'Gujarati' },
+              { id: 'lang_hindi', title: 'Hindi' },
+              { id: 'lang_english', title: 'English' },
+              { id: 'lang_tamil', title: 'Tamil' }
+            ]
+          }
+        ]
+      });
+      saveAndSend(bodyText, listResult.messageId, 'interactive');
+    } catch (err) {
+      console.error('[webhook] Error in LoanPlus I want Loan step:', err);
+    }
+    return true;
+  }
+
+  // ------------------------------------------------------------
+  // STEP 3: Language Selected (Gujarati, Hindi, English, Tamil)
+  // -> Ask "kya kuch sawal ke jawab de sakte hai"
+  // Options: "Call pe baat karne par" or "Ji haa puchiye"
+  // ------------------------------------------------------------
+  if (/^(lang_gujarati|lang_hindi|lang_english|lang_tamil|gujarati|hindi|english|tamil)$/i.test(triggerInput) || (lastBotMsgText.includes('bhasha chunein') || lastBotMsgText.includes('select your preferred language'))) {
+    // Make sure it's not another option triggered
+    if (!/^(call_to_advisor|i_want_loan|btn_call_advisor)$/i.test(triggerInput)) {
+      const bodyText = "🙏 Dhanyawad! Kya aap kuch sawal ke jawab de sakte hai taaki ham aapko best loan offer de sakein?";
+      try {
+        const btnResult = await sendInteractiveButtons({
+          phoneNumberId,
+          accessToken,
+          to: contactRecord.phone,
+          bodyText,
+          buttons: [
+            { id: 'btn_ask_questions', title: 'Ji haa puchiye' },
+            { id: 'btn_call_advisor', title: 'Call pe baat kare' }
+          ]
+        });
+        saveAndSend(bodyText, btnResult.messageId, 'interactive');
+      } catch (err) {
+        console.error('[webhook] Error in LoanPlus Language Selection step:', err);
+      }
+      return true;
+    }
+  }
+
+  // ------------------------------------------------------------
+  // STEP 4: "Ji haa puchiye" clicked -> Ask "Apka income Source kya hai"
+  // Options: "Salary" or "Busniess"
+  // ------------------------------------------------------------
+  if (/^(btn_ask_questions|ji haa puchiye|ji haa|puchiye|haa puchiye)$/i.test(triggerInput) || (lastBotMsgText.includes('kya aap kuch sawal') && /^(yes|haa|ha)$/i.test(triggerInput))) {
+    const bodyText = "💼 Apka income Source kya hai? Kripya niche diye gaye options me se chunein:";
+    try {
+      const btnResult = await sendInteractiveButtons({
+        phoneNumberId,
+        accessToken,
+        to: contactRecord.phone,
+        bodyText,
+        buttons: [
+          { id: 'inc_salary', title: 'Salary' },
+          { id: 'inc_business', title: 'Busniess' }
+        ]
+      });
+      saveAndSend(bodyText, btnResult.messageId, 'interactive');
+    } catch (err) {
+      console.error('[webhook] Error in LoanPlus Ask Questions step:', err);
+    }
+    return true;
+  }
+
+  // ------------------------------------------------------------
+  // STEP 5: "Salary" chosen -> Ask "Apko salary kaise milti hai"
+  // Options: "Bank Credit" (NEFT aur IMPS) or "Cash"
+  // ------------------------------------------------------------
+  if (/^(inc_salary|salary)$/i.test(triggerInput) && !lastBotMsgText.includes('15,000 se jyada')) {
+    const bodyText = "💵 Apko salary kaise milti hai?\n\n• *Bank Credit* (NEFT aur IMPS)\n• *Cash*\n\nKripya niche diye gaye button par click karein:";
+    try {
+      const btnResult = await sendInteractiveButtons({
+        phoneNumberId,
+        accessToken,
+        to: contactRecord.phone,
+        bodyText,
+        buttons: [
+          { id: 'sal_bank', title: 'Bank Credit' },
+          { id: 'sal_cash', title: 'Cash' }
+        ]
+      });
+      saveAndSend(bodyText, btnResult.messageId, 'interactive');
+    } catch (err) {
+      console.error('[webhook] Error in LoanPlus Salary Type step:', err);
+    }
+    return true;
+  }
+
+  // ------------------------------------------------------------
+  // STEP 6: "Bank Credit" clicked -> Ask "Kya aapki salary 15,000 se jyada Account me credit hoti hai?"
+  // Options: "Yes" or "No"
+  // ------------------------------------------------------------
+  if (/^(sal_bank|bank credit|bank|neft|imps)$/i.test(triggerInput) && lastBotMsgText.includes('salary kaise milti hai')) {
+    const bodyText = "💰 Kya aapki salary 15,000 se jyada Account me credit hoti hai?";
+    try {
+      const btnResult = await sendInteractiveButtons({
+        phoneNumberId,
+        accessToken,
+        to: contactRecord.phone,
+        bodyText,
+        buttons: [
+          { id: 'sal_gt_15k', title: 'Yes' },
+          { id: 'sal_lt_15k', title: 'No' }
+        ]
+      });
+      saveAndSend(bodyText, btnResult.messageId, 'interactive');
+    } catch (err) {
+      console.error('[webhook] Error in LoanPlus 15k Salary check step:', err);
+    }
+    return true;
+  }
+
+  // ------------------------------------------------------------
+  // STEP 7: "No" clicked (Salary < 15k) -> Reply ineligible
+  // Reply: "Aap loan ke liye aligeable nhi hai interest dikhane ke liye thank you"
+  // ------------------------------------------------------------
+  if (/^(sal_lt_15k|no|nahi)$/i.test(triggerInput) && lastBotMsgText.includes('15,000 se jyada')) {
+    const replyText = "🙏 Aap loan ke liye aligeable nhi hai interest dikhane ke liye thank you.";
+    try {
+      const txtResult = await sendTextMessage({
+        phoneNumberId,
+        accessToken,
+        to: contactRecord.phone,
+        text: replyText
+      });
+      saveAndSend(replyText, txtResult.messageId);
+    } catch (err) {
+      console.error('[webhook] Error in LoanPlus Ineligible step:', err);
+    }
+    return true;
+  }
+
+  // ------------------------------------------------------------
+  // STEP 8: "Yes" (Salary > 15k) OR "Cash" (Salary mode) chosen
+  // -> Ask "Apko kis parakar ki Loan Chaiye"
+  // Options: "Naya ghar kharidhne hetu" / "Mere property par" / "Bina property personal Loan"
+  // ------------------------------------------------------------
+  if ((/^(sal_gt_15k|yes|haa|ha)$/i.test(triggerInput) && lastBotMsgText.includes('15,000 se jyada')) ||
+      (/^(sal_cash|cash)$/i.test(triggerInput) && lastBotMsgText.includes('salary kaise milti hai'))) {
+    const bodyText = "🏠 Apko kis parakar ki Loan Chaiye? Kripya niche diye gaye options me se chunein:";
+    try {
+      // Interactive list because titles/descriptions are long (over 20 chars limit of buttons)
+      const listResult = await sendInteractiveList({
+        phoneNumberId,
+        accessToken,
+        to: contactRecord.phone,
+        bodyText,
+        buttonLabel: "Select Loan Type",
+        sections: [
+          {
+            title: "Loan Prakar / Type",
+            rows: [
+              { id: 'loan_home_new', title: 'Naya Ghar Kharidne', description: 'Naya ghar kharidhne hetu' },
+              { id: 'loan_lap', title: 'Mere Property Par', description: 'Mere property par loan' },
+              { id: 'loan_personal', title: 'Personal Loan', description: 'Bina property personal Loan' }
+            ]
+          }
+        ]
+      });
+      saveAndSend(bodyText, listResult.messageId, 'interactive');
+    } catch (err) {
+      console.error('[webhook] Error in LoanPlus Loan Type step:', err);
+    }
+    return true;
+  }
+
+  // ------------------------------------------------------------
+  // STEP 9: Any Loan Type chosen ("Naya ghar kharidhne hetu", "Mere property par", "Bina property personal Loan")
+  // Reply: "Interest dikhane ke liye thank you ham aapko jaldi sampark karenge"
+  // ------------------------------------------------------------
+  if (/^(loan_home_new|loan_lap|loan_personal|naya ghar kharidne|mere property par|personal loan|naya ghar kharidhne hetu|bina property personal loan)$/i.test(triggerInput) ||
+      (lastBotMsgText.includes('parakar ki loan') && /^(1|2|3|home|property|personal)$/i.test(triggerInput))) {
+    const replyText = "🙏 Interest dikhane ke liye thank you ham aapko jaldi sampark karenge.";
+    try {
+      const txtResult = await sendTextMessage({
+        phoneNumberId,
+        accessToken,
+        to: contactRecord.phone,
+        text: replyText
+      });
+      saveAndSend(replyText, txtResult.messageId);
+    } catch (err) {
+      console.error('[webhook] Error in LoanPlus Loan Type final step:', err);
+    }
+    return true;
+  }
+
+  // ------------------------------------------------------------
+  // STEP 10: "Busniess" / "Business" chosen at Income Source step
+  // -> Ask "Apka income souce kya hai"
+  // Options: "Trading" / "Manufacturering" / "Service"
+  // ------------------------------------------------------------
+  if (/^(inc_business|busniess|business|vyapar)$/i.test(triggerInput) && !lastBotMsgText.includes('trading')) {
+    const bodyText = "🏢 Apka income souce kya hai? Kripya niche diye gaye options me se chunein:";
+    try {
+      const btnResult = await sendInteractiveButtons({
+        phoneNumberId,
+        accessToken,
+        to: contactRecord.phone,
+        bodyText,
+        buttons: [
+          { id: 'biz_trading', title: 'Trading' },
+          { id: 'biz_manufacturing', title: 'Manufacturering' },
+          { id: 'biz_service', title: 'Service' }
+        ]
+      });
+      saveAndSend(bodyText, btnResult.messageId, 'interactive');
+    } catch (err) {
+      console.error('[webhook] Error in LoanPlus Business Type step:', err);
+    }
+    return true;
+  }
+
+  // ------------------------------------------------------------
+  // STEP 11: Any Business option ("Trading", "Manufacturering", "Service") clicked
+  // Reply: "Interest dikhane ke liye thank you ham jaldi aapko sampark karenge"
+  // ------------------------------------------------------------
+  if (/^(biz_trading|biz_manufacturing|biz_service|trading|manufacturering|manufacturing|service)$/i.test(triggerInput) && lastBotMsgText.includes('income souce kya hai')) {
+    const replyText = "🙏 Interest dikhane ke liye thank you ham jaldi aapko sampark karenge.";
+    try {
+      const txtResult = await sendTextMessage({
+        phoneNumberId,
+        accessToken,
+        to: contactRecord.phone,
+        text: replyText
+      });
+      saveAndSend(replyText, txtResult.messageId);
+    } catch (err) {
+      console.error('[webhook] Error in LoanPlus Business Type final step:', err);
+    }
+    return true;
+  }
+
+  return false;
+}
+
 async function handleAIAutoReply(
   conversation: any,
   contact: any,
@@ -962,6 +1290,8 @@ CORE RULES:
    2. *Check Loan Eligibility*
    3. *Calculate Loan EMI*
    4. *Speak to a Loan Expert*
+6. OPT-OUT / NOT INTERESTED: If the customer says "stop", "not interested", "nahi chahiye", "don't message", or anything similar indicating disinterest, DO NOT ask any further questions or try to convince them. Simply reply exactly with: "🙏 Sorry for disturbing you. We will not send you any more messages. Have a great day!" and end the conversation.
+7. DEVELOPER TEST MODE: If the user says "muje apna flow check karna hai" or anything indicating they are testing their own flow, immediately reply exactly with: "Okay sir, okay, uske baad ham flow ko test kar lenge." DO NOT try to sell them a loan. If they later say "done", reply exactly with: "Ab flow ko rokte hai."
 
 LANGUAGE & TONE:
 - Match the user's language (English, Hindi, Hinglish).
@@ -991,6 +1321,9 @@ CORE INTELLIGENCE FRAMEWORKS:
 10. PROJECT MEMORY: Acknowledge that you are building their website. Maintain a professional, high-end agency tone.
 11. NEW CUSTOMER GREETING: When a new customer says "Hi" or starts a conversation, warmly welcome them. Present a clear menu: "Build a New Website", "Improve My Existing Website", "View Pricing", "Speak to an Expert". Use engaging emojis and make the first impression premium.
 12. COMPANY FACTS: Owner of Nexvora is *Prince R Pandey*. Nexvora has *2+ years of experience* and *20+ premium projects* delivered globally.
+13. OPT-OUT / NOT INTERESTED: If the customer says "stop", "not interested", "nahi chahiye", "don't message", or anything similar indicating disinterest, DO NOT ask any further questions, attempt to convince them, or use sales psychology. Simply reply exactly with: "🙏 Sorry for disturbing you. We will not send you any more messages. Have a great day!" and end the conversation.
+14. CHAT PREFERENCE: NEVER ask the customer to jump on a phone call, voice call, or video call. If you want to discuss their project further, use your convincing skills and ONLY ask for "10 minutes of your time to chat right here when you are free".
+15. DEVELOPER TEST MODE: If the user says "muje apna flow check karna hai" or anything indicating they are testing their own flow, immediately reply exactly with: "Okay sir, okay, uske baad ham flow ko test kar lenge." DO NOT use any sales psychology or attempt to sell them a website. If they later say "done", reply exactly with: "Ab flow ko rokte hai."
 
 ============================================================
 SALES PSYCHOLOGY ENGINE (Cialdini's 6+1 Principles):
@@ -1378,19 +1711,48 @@ async function processMessage(
   const ownerCheck = isOwnerPhone(contactRecord.phone);
   if (ownerCheck.isOwner && ownerCheck.ownerType) {
     const inboundText = contentText ?? message.text?.body ?? '';
-    const handled = await handleOwnerAssistantQuery({
-      inboundText,
-      conversation,
-      contactRecord,
-      ownerType: ownerCheck.ownerType,
-      accessToken,
-      phoneNumberId,
-      supabaseAdmin: supabaseAdmin(),
-      metaMessageId: message.id
-    });
-    if (handled) {
-      console.log(`[webhook] Owner Executive Assistant processed query for ${contactRecord.phone}`);
-      return;
+    
+    // Check if the owner is in "Test Mode" to act like a normal customer
+    let isTestMode = false;
+    const { data: recentMsgs } = await supabaseAdmin()
+      .from('messages')
+      .select('content_text')
+      .eq('conversation_id', conversation.id)
+      .eq('sender_type', 'customer')
+      .order('created_at', { ascending: false })
+      .limit(20);
+      
+    if (recentMsgs) {
+      for (const msg of recentMsgs) {
+        const text = (msg.content_text || '').toLowerCase();
+        // If they explicitly exited test mode
+        if (text === 'done' || text.includes('flow ko rokte hai')) {
+          isTestMode = false;
+          break;
+        }
+        // If they entered test mode
+        if (text.includes('muje apna flow check karna hai') || text.includes('test mode')) {
+          isTestMode = true;
+          break;
+        }
+      }
+    }
+
+    if (!isTestMode) {
+      const handled = await handleOwnerAssistantQuery({
+        inboundText,
+        conversation,
+        contactRecord,
+        ownerType: ownerCheck.ownerType,
+        accessToken,
+        phoneNumberId,
+        supabaseAdmin: supabaseAdmin(),
+        metaMessageId: message.id
+      });
+      if (handled) {
+        console.log(`[webhook] Owner Executive Assistant processed query for ${contactRecord.phone}`);
+        return;
+      }
     }
   }
 
@@ -1414,6 +1776,7 @@ async function processMessage(
   // basically for free (one indexed SELECT for the active run).
   // ============================================================
   let outreachConsumed = false;
+  let loanPlusConsumed = false;
   if (accountId !== '6b428da4-3ce6-47aa-8002-53296da16e9a') {
     outreachConsumed = await handleOutreachFlow({
       accountId,
@@ -1424,9 +1787,19 @@ async function processMessage(
       accessToken,
       phoneNumberId
     });
+  } else {
+    loanPlusConsumed = await handleLoanPlusFlow({
+      accountId,
+      conversation,
+      contactRecord,
+      inboundText: contentText ?? message.text?.body ?? '',
+      interactiveReplyId,
+      accessToken,
+      phoneNumberId
+    });
   }
 
-  const flowResult = !outreachConsumed ? await dispatchInboundToFlows({
+  const flowResult = (!outreachConsumed && !loanPlusConsumed) ? await dispatchInboundToFlows({
     accountId,
     userId: configOwnerUserId,
     contactId: contactRecord.id,
@@ -1446,7 +1819,7 @@ async function processMessage(
           },
     isFirstInboundMessage,
   }) : { consumed: true };
-  const flowConsumed = outreachConsumed || flowResult.consumed
+  const flowConsumed = outreachConsumed || loanPlusConsumed || flowResult.consumed
 
   // Fire any automations that react to this webhook event. All dispatches
   // run here (not earlier) so the contact, conversation, and inbound
