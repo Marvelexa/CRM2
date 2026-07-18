@@ -1239,6 +1239,9 @@ async function handleLoanPlusFlow(args: {
     let btn3 = 'Service';
     if (userLang === 'gujarati') {
       bodyText = "🏢 તમારો આવકનો સ્ત્રોત શું છે? કૃપા કરીને નીચે આપેલા વિકલ્પોમાંથી પસંદ કરો:";
+      btn1 = 'વેપાર (Trading)';
+      btn2 = 'ઉત્પાદન (Manufactur)';
+      btn3 = 'સેવા (Service)';
     }
     try {
       const btnResult = await sendInteractiveButtons({
