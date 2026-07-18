@@ -1035,7 +1035,7 @@ async function handleLoanPlusFlow(args: {
   // STEP 2: "I want Loan" clicked -> Ask Language selection (Gujarati, Hindi, English, Tamil)
   // ------------------------------------------------------------
   if (/^(i_want_loan|i want loan|loan chahiye|apply loan|get loan|loan)$/i.test(triggerInput)) {
-    const bodyText = "😊 Welcome to *Loan plus+*! Kripya apni bhasha chunein / Please select your preferred language:";
+    const bodyText = "😊 *Loan plus+* માં આપનું સ્વાગત છે!\n\nKripya apni bhasha chunein / Please select your preferred language:";
     try {
       // Use interactive list because there are 4 options (buttons max is 3)
       const listResult = await sendInteractiveList({
@@ -1043,15 +1043,15 @@ async function handleLoanPlusFlow(args: {
         accessToken,
         to: contactRecord.phone,
         bodyText,
-        buttonLabel: "Select Language",
+        buttonLabel: "ભાષા પસંદ કરો",
         sections: [
           {
-            title: "Language / Bhasha",
+            title: "ભાષા / Language",
             rows: [
-              { id: 'lang_gujarati', title: 'Gujarati' },
-              { id: 'lang_hindi', title: 'Hindi' },
+              { id: 'lang_gujarati', title: 'ગુજરાતી (Gujarati)' },
+              { id: 'lang_hindi', title: 'हिन्दी (Hindi)' },
               { id: 'lang_english', title: 'English' },
-              { id: 'lang_tamil', title: 'Tamil' }
+              { id: 'lang_tamil', title: 'தமிழ் (Tamil)' }
             ]
           }
         ]
