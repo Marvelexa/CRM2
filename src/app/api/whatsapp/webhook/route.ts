@@ -959,6 +959,37 @@ async function handleLoanPlusFlow(args: {
   const lastBotMsgText = (lastBotMessages && lastBotMessages.length > 0 ? (lastBotMessages[0].content_text || '') : (conversation.last_message_text || '')).toLowerCase();
 
   // ------------------------------------------------------------
+  // STEP 0: Greetings / Unrecognized -> Send Main Menu
+  // ------------------------------------------------------------
+  if (/^(hi|hello|hey|namaste|start|help|menu|loan plus)$/i.test(triggerInput) || triggerInput === '') {
+    const bodyText = "નમસ્તે! Loan plus+ માં આપનું સ્વાગત છે! અમે 15+ વર્ષનો અનુભવ ધરાવતા લોન સલાહકાર છીએ. કૃપા કરીને નીચેના વિકલ્પોમાંથી પસંદ કરો:";
+    try {
+      const listResult = await sendInteractiveList({
+        phoneNumberId,
+        accessToken,
+        to: contactRecord.phone,
+        bodyText,
+        buttonLabel: "વિકલ્પો જુઓ (Options)",
+        sections: [
+          {
+            title: "મુખ્ય મેનુ (Main Menu)",
+            rows: [
+              { id: 'i_want_loan', title: 'નવી લોન માટે અરજી કરો', description: 'Apply for a new loan' },
+              { id: 'check_eligibility', title: 'લોન પાત્રતા તપાસો', description: 'Check loan eligibility' },
+              { id: 'calc_emi', title: 'લોન EMI ગણતરી કરો', description: 'Calculate loan EMI' },
+              { id: 'call_to_advisor', title: 'લોન નિષ્ણાત સાથે વાત કરો', description: 'Talk to an expert' }
+            ]
+          }
+        ]
+      });
+      saveAndSend(bodyText, listResult.messageId, 'interactive');
+    } catch (err) {
+      console.error('[webhook] Error in LoanPlus Greeting step:', err);
+    }
+    return true;
+  }
+
+  // ------------------------------------------------------------
   // STEP 1: "Call To Advisor" button clicked OR any time they click call advisor
   // ------------------------------------------------------------
   if (/^(call_to_advisor|call to advisor|call pe baat|call pe baat karne par|btn_call_advisor)$/i.test(triggerInput)) {
@@ -1268,39 +1299,8 @@ async function handleAIAutoReply(
     let systemPrompt = '';
 
     if (accountId === '6b428da4-3ce6-47aa-8002-53296da16e9a') {
-      // Rajesh Pandey's Account (Loan plus+)
-      systemPrompt = `You are Loan plus+ AI, an elite Professional Loan Consultant & Financial Advisor, not just a customer service bot.
-Your goal is to guide clients through loan applications, eligibility criteria, documentation, and consulting services.
-
-BUSINESS CREDENTIALS:
-- Business Name: *Loan plus+*
-- Experience: *15+ years* of excellence in financial consulting
-- Banking Partners: Associated with *50+ leading banks and NBFCs*
-- Happy Customers: Served *7000+ satisfied clients*
-- Loans Processed: Over *100+ Crore* in loans successfully processed
-- Owner Name: *Rajesh Pandey*
-
-CORE RULES:
-1. NO PRICING TABLE: Do not quote any packages or development costs. All loan consultation, processing advice, and basic eligibility checks are handled as a service, and custom rates/eligibility criteria apply based on the applicant's profile, income, and bank choice.
-2. LOAN KNOWLEDGE GRAPH: Assist clients with various types of loans: Home Loans, Business Loans, Personal Loans, Loan Against Property (LAP), and Car Loans.
-3. CONTEXT MEMORY: Read the chat history carefully. Maintain the flow of conversation. If the user mentions "Business Loan" and then asks "What documents?", explain the documentation specifically for a Business Loan.
-4. SOLUTION RECOMMENDATION: Recommend the best type of loan based on their need. Explain the benefits of applying through Loan plus+ (associated with 50+ banking partners, offering competitive interest rates, and seamless processing).
-5. NEW CUSTOMER GREETING: When a new customer says "Hi" or starts a conversation, warmly welcome them to *Loan plus+* and present a clear menu with options like:
-   1. *Apply for a New Loan*
-   2. *Check Loan Eligibility*
-   3. *Calculate Loan EMI*
-   4. *Speak to a Loan Expert*
-6. OPT-OUT / NOT INTERESTED: If the customer says "stop", "not interested", "nahi chahiye", "don't message", or anything similar indicating disinterest, DO NOT ask any further questions or try to convince them. Simply reply exactly with: "🙏 Sorry for disturbing you. We will not send you any more messages. Have a great day!" and end the conversation.
-7. DEVELOPER TEST MODE: If the user says "muje apna flow check karna hai" or anything indicating they are testing their own flow, immediately reply exactly with: "Okay sir, okay, uske baad ham flow ko test kar lenge." DO NOT try to sell them a loan. If they later say "done", reply exactly with: "Ab flow ko rokte hai."
-
-LANGUAGE & TONE:
-- Match the user's language (English, Hindi, Hinglish).
-- Be extremely polite, warm, and professional.
-- FORMATTING: Format your replies clearly using emojis and bullet points for readability. Use WhatsApp's native bold formatting (*text*).
-
-CUSTOMER DETAILS:
-Phone Number: ${contact.phone}
-Detected Country: ${detectedCountry}`;
+      // AI IS DISABLED FOR LOAN PLUS AS PER USER REQUEST
+      return;
     } else {
       // Prince Pandey / Default Account (Nexvora AI — V2 Super-Intelligence)
       systemPrompt = `You are Nexvora AI, an elite Professional Website Consultant, UX Expert, and Sales Psychologist — not just a customer service bot.
