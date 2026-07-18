@@ -959,36 +959,37 @@ async function handleLoanPlusFlow(args: {
   const lastBotMsgText = (lastBotMessages && lastBotMessages.length > 0 ? (lastBotMessages[0].content_text || '') : (conversation.last_message_text || '')).toLowerCase();
 
   let userLang = 'hinglish';
-  // Check current message first
+  // 1) Check current message trigger
   if (triggerInput.includes('gujarati') || triggerInput === 'lang_gujarati') { userLang = 'gujarati'; }
   else if (triggerInput.includes('hindi') || triggerInput === 'lang_hindi') { userLang = 'hindi'; }
   else if (triggerInput.includes('english') || triggerInput === 'lang_english') { userLang = 'english'; }
   else if (triggerInput.includes('tamil') || triggerInput === 'lang_tamil') { userLang = 'tamil'; }
   
-  // If not detected from current message, scan past customer messages
+  // 2) Scan past customer messages (content_text AND interactive_reply_id)
   if (userLang === 'hinglish') {
     try {
       const { data: customerMessages } = await supabaseAdmin()
         .from('messages')
-        .select('content_text')
+        .select('content_text, interactive_reply_id')
         .eq('conversation_id', conversation.id)
         .eq('sender_type', 'customer')
         .order('created_at', { ascending: false })
-        .limit(10);
+        .limit(15);
       
       if (customerMessages) {
         for (const msg of customerMessages) {
           const t = (msg.content_text || '').toLowerCase();
-          if (t.includes('gujarati') || t === 'lang_gujarati') { userLang = 'gujarati'; break; }
-          if (t.includes('hindi') || t === 'lang_hindi') { userLang = 'hindi'; break; }
-          if (t.includes('english') || t === 'lang_english') { userLang = 'english'; break; }
-          if (t.includes('tamil') || t === 'lang_tamil') { userLang = 'tamil'; break; }
+          const rid = (msg.interactive_reply_id || '').toLowerCase();
+          if (t.includes('gujarati') || rid === 'lang_gujarati') { userLang = 'gujarati'; break; }
+          if (t.includes('hindi') || rid === 'lang_hindi') { userLang = 'hindi'; break; }
+          if (t.includes('english') || rid === 'lang_english') { userLang = 'english'; break; }
+          if (t.includes('tamil') || rid === 'lang_tamil') { userLang = 'tamil'; break; }
         }
       }
     } catch(e) {}
   }
   
-  // Final fallback: if bot has already sent Gujarati text, user must have chosen Gujarati
+  // 3) Final fallback: detect Gujarati Unicode (0A80–0AFF) in bot messages
   if (userLang === 'hinglish') {
     try {
       const { data: botMsgs } = await supabaseAdmin()
@@ -1002,12 +1003,13 @@ async function handleLoanPlusFlow(args: {
       if (botMsgs) {
         for (const msg of botMsgs) {
           const t = (msg.content_text || '');
-          // Check for Gujarati Unicode range (0A80–0AFF)
           if (/[\u0A80-\u0AFF]/.test(t)) { userLang = 'gujarati'; break; }
         }
       }
     } catch(e) {}
   }
+
+  console.log('[LoanPlus] userLang detected:', userLang, '| triggerInput:', triggerInput);
 
 
   // ------------------------------------------------------------
