@@ -1240,7 +1240,7 @@ async function handleLoanPlusFlow(args: {
       accessToken,
       to: contactRecord.phone,
       bodyText,
-      buttonLabel: "વિકલ્પો જુઓ (Options)",
+      buttonLabel: "Main Menu",
       sections: [
         {
           title: "મુખ્ય મેનુ (Main Menu)",
