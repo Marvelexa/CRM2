@@ -1165,7 +1165,21 @@ async function handleLoanPlusFlow(args: {
   // ------------------------------------------------------------
   if ((/^(sal_gt_15k|yes|haa|ha)$/i.test(triggerInput) && lastBotMsgText.includes('15,000 se jyada')) ||
       (/^(sal_cash|cash)$/i.test(triggerInput) && lastBotMsgText.includes('salary kaise milti hai'))) {
-    const bodyText = userLang === 'gujarati' ? "🏠 તમારે કયા પ્રકારની લોન જોઈએ છે? કૃપા કરીને નીચે આપેલા વિકલ્પોમાંથી પસંદ કરો:" : "🏠 Apko kis parakar ki Loan Chaiye? Kripya niche diye gaye options me se chunein:";
+    
+    let bodyText = "🏠 Apko kis parakar ki Loan Chaiye? Kripya niche diye gaye options me se chunein:";
+    let btn1 = 'Naya Ghar Kharidne';
+    let btn2 = 'Mere Property Par';
+    let btn3 = 'Personal Loan';
+    let sectionTitle = 'Loan Prakar / Type';
+    
+    if (userLang === 'gujarati') {
+      bodyText = "🏠 તમારે કયા પ્રકારની લોન જોઈએ છે? કૃપા કરીને નીચે આપેલા વિકલ્પોમાંથી પસંદ કરો:";
+      btn1 = 'નવું ઘર ખરીદવા માટે';
+      btn2 = 'પ્રોપર્ટી પર લોન';
+      btn3 = 'પર્સનલ લોન';
+      sectionTitle = 'લોન પ્રકાર';
+    }
+
     try {
       // Interactive list because titles/descriptions are long (over 20 chars limit of buttons)
       const listResult = await sendInteractiveList({
@@ -1173,14 +1187,14 @@ async function handleLoanPlusFlow(args: {
         accessToken,
         to: contactRecord.phone,
         bodyText,
-        buttonLabel: "Select Loan Type",
+        buttonLabel: userLang === 'gujarati' ? "વિકલ્પો પસંદ કરો" : "Select Loan Type",
         sections: [
           {
-            title: "Loan Prakar / Type",
+            title: sectionTitle,
             rows: [
-              { id: 'loan_home_new', title: 'Naya Ghar Kharidne', description: 'Naya ghar kharidhne hetu' },
-              { id: 'loan_lap', title: 'Mere Property Par', description: 'Mere property par loan' },
-              { id: 'loan_personal', title: 'Personal Loan', description: 'Bina property personal Loan' }
+              { id: 'loan_home_new', title: btn1 },
+              { id: 'loan_lap', title: btn2 },
+              { id: 'loan_personal', title: btn3 }
             ]
           }
         ]
