@@ -959,37 +959,6 @@ async function handleLoanPlusFlow(args: {
   const lastBotMsgText = (lastBotMessages && lastBotMessages.length > 0 ? (lastBotMessages[0].content_text || '') : (conversation.last_message_text || '')).toLowerCase();
 
   // ------------------------------------------------------------
-  // STEP 0: Greetings / Unrecognized -> Send Main Menu
-  // ------------------------------------------------------------
-  if (/^(hi|hello|hey|namaste|start|help|menu|loan plus)$/i.test(triggerInput) || triggerInput === '') {
-    const bodyText = "નમસ્તે! Loan plus+ માં આપનું સ્વાગત છે! અમે 15+ વર્ષનો અનુભવ ધરાવતા લોન સલાહકાર છીએ. કૃપા કરીને નીચેના વિકલ્પોમાંથી પસંદ કરો:";
-    try {
-      const listResult = await sendInteractiveList({
-        phoneNumberId,
-        accessToken,
-        to: contactRecord.phone,
-        bodyText,
-        buttonLabel: "વિકલ્પો જુઓ (Options)",
-        sections: [
-          {
-            title: "મુખ્ય મેનુ (Main Menu)",
-            rows: [
-              { id: 'i_want_loan', title: 'નવી લોન માટે અરજી કરો', description: 'Apply for a new loan' },
-              { id: 'check_eligibility', title: 'લોન પાત્રતા તપાસો', description: 'Check loan eligibility' },
-              { id: 'calc_emi', title: 'લોન EMI ગણતરી કરો', description: 'Calculate loan EMI' },
-              { id: 'call_to_advisor', title: 'લોન નિષ્ણાત સાથે વાત કરો', description: 'Talk to an expert' }
-            ]
-          }
-        ]
-      });
-      saveAndSend(bodyText, listResult.messageId, 'interactive');
-    } catch (err) {
-      console.error('[webhook] Error in LoanPlus Greeting step:', err);
-    }
-    return true;
-  }
-
-  // ------------------------------------------------------------
   // STEP 1: "Call To Advisor" button clicked OR any time they click call advisor
   // ------------------------------------------------------------
   if (/^(call_to_advisor|call to advisor|call pe baat|call pe baat karne par|btn_call_advisor)$/i.test(triggerInput)) {
@@ -1261,7 +1230,35 @@ async function handleLoanPlusFlow(args: {
     return true;
   }
 
-  return false;
+  // ------------------------------------------------------------
+  // FALLBACK (STEP 0): Any unmatched message -> Send Main Menu
+  // ------------------------------------------------------------
+  const bodyText = "નમસ્તે! Loan plus+ માં આપનું સ્વાગત છે! અમે 15+ વર્ષનો અનુભવ ધરાવતા લોન સલાહકાર છીએ. કૃપા કરીને નીચેના વિકલ્પોમાંથી પસંદ કરો:";
+  try {
+    const listResult = await sendInteractiveList({
+      phoneNumberId,
+      accessToken,
+      to: contactRecord.phone,
+      bodyText,
+      buttonLabel: "વિકલ્પો જુઓ (Options)",
+      sections: [
+        {
+          title: "મુખ્ય મેનુ (Main Menu)",
+          rows: [
+            { id: 'i_want_loan', title: 'નવી લોન માટે અરજી કરો', description: 'Apply for a new loan' },
+            { id: 'check_eligibility', title: 'લોન પાત્રતા તપાસો', description: 'Check loan eligibility' },
+            { id: 'calc_emi', title: 'લોન EMI ગણતરી કરો', description: 'Calculate loan EMI' },
+            { id: 'call_to_advisor', title: 'લોન નિષ્ણાત સાથે વાત કરો', description: 'Talk to an expert' }
+          ]
+        }
+      ]
+    });
+    saveAndSend(bodyText, listResult.messageId, 'interactive');
+  } catch (err) {
+    console.error('[webhook] Error in LoanPlus Greeting fallback:', err);
+  }
+
+  return true;
 }
 
 async function handleAIAutoReply(
