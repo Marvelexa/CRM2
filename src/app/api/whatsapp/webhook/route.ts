@@ -1070,8 +1070,15 @@ async function handleLoanPlusFlow(args: {
   // STEP 4: "Ji haa puchiye" clicked -> Ask "Apka income Source kya hai"
   // Options: "Salary" or "Busniess"
   // ------------------------------------------------------------
-  if (/^(btn_ask_questions|ji haa puchiye|ji haa|puchiye|haa puchiye)$/i.test(triggerInput) || (lastBotMsgText.includes('kya aap kuch sawal') && /^(yes|haa|ha)$/i.test(triggerInput))) {
-    const bodyText = "💼 Apka income Source kya hai? Kripya niche diye gaye options me se chunein:";
+  if (/^(btn_ask_questions|ji haa puchiye|ji haa|puchiye|haa puchiye)$/i.test(triggerInput) || ((lastBotMsgText.includes('kya aap kuch sawal') || lastBotMsgText.includes('પ્રશ્નોના જવાબ')) && /^(yes|haa|ha)$/i.test(triggerInput))) {
+    let bodyText = "💼 Apka income Source kya hai? Kripya niche diye gaye options me se chunein:";
+    let btn1 = 'Salary';
+    let btn2 = 'Busniess';
+    if (userLang === 'gujarati') {
+      bodyText = "💼 તમારો આવકનો સ્ત્રોત શું છે? કૃપા કરીને નીચે આપેલા વિકલ્પોમાંથી પસંદ કરો:";
+      btn1 = 'પગાર (Salary)';
+      btn2 = 'વ્યવસાય (Business)';
+    }
     try {
       const btnResult = await sendInteractiveButtons({
         phoneNumberId,
@@ -1079,8 +1086,8 @@ async function handleLoanPlusFlow(args: {
         to: contactRecord.phone,
         bodyText,
         buttons: [
-          { id: 'inc_salary', title: 'Salary' },
-          { id: 'inc_business', title: 'Busniess' }
+          { id: 'inc_salary', title: btn1 },
+          { id: 'inc_business', title: btn2 }
         ]
       });
       saveAndSend(bodyText, btnResult.messageId, 'interactive');
@@ -1095,7 +1102,14 @@ async function handleLoanPlusFlow(args: {
   // Options: "Bank Credit" (NEFT aur IMPS) or "Cash"
   // ------------------------------------------------------------
   if (/^(inc_salary|salary)$/i.test(triggerInput) && !((lastBotMsgText.includes('15,000 se jyada') || lastBotMsgText.includes('15,000 થી વધુ')) || lastBotMsgText.includes('15,000 થી વધુ'))) {
-    const bodyText = "💵 Apko salary kaise milti hai?\n\n• *Bank Credit* (NEFT aur IMPS)\n• *Cash*\n\nKripya niche diye gaye button par click karein:";
+    let bodyText = "💵 Apko salary kaise milti hai?\n\n• *Bank Credit* (NEFT aur IMPS)\n• *Cash*\n\nKripya niche diye gaye button par click karein:";
+    let btn1 = 'Bank Credit';
+    let btn2 = 'Cash';
+    if (userLang === 'gujarati') {
+      bodyText = "💵 તમને પગાર કેવી રીતે મળે છે?\n\n• *બેંક ક્રેડિટ* (NEFT અને IMPS)\n• *રોકડ (Cash)*\n\nકૃપા કરીને નીચે આપેલ વિકલ્પ પસંદ કરો:";
+      btn1 = 'બેંક ક્રેડિટ';
+      btn2 = 'રોકડ (Cash)';
+    }
     try {
       const btnResult = await sendInteractiveButtons({
         phoneNumberId,
@@ -1103,8 +1117,8 @@ async function handleLoanPlusFlow(args: {
         to: contactRecord.phone,
         bodyText,
         buttons: [
-          { id: 'sal_bank', title: 'Bank Credit' },
-          { id: 'sal_cash', title: 'Cash' }
+          { id: 'sal_bank', title: btn1 },
+          { id: 'sal_cash', title: btn2 }
         ]
       });
       saveAndSend(bodyText, btnResult.messageId, 'interactive');
@@ -1118,8 +1132,15 @@ async function handleLoanPlusFlow(args: {
   // STEP 6: "Bank Credit" clicked -> Ask "Kya aapki salary 15,000 se jyada Account me credit hoti hai?"
   // Options: "Yes" or "No"
   // ------------------------------------------------------------
-  if (/^(sal_bank|bank credit|bank|neft|imps)$/i.test(triggerInput) && lastBotMsgText.includes('salary kaise milti hai')) {
-    const bodyText = "💰 Kya aapki salary 15,000 se jyada Account me credit hoti hai?";
+  if (/^(sal_bank|bank credit|bank|neft|imps)$/i.test(triggerInput) && (lastBotMsgText.includes('salary kaise milti hai') || lastBotMsgText.includes('પગાર કેવી રીતે મળે છે'))) {
+    let bodyText = "💰 Kya aapki salary 15,000 se jyada Account me credit hoti hai?";
+    let btn1 = 'Yes';
+    let btn2 = 'No';
+    if (userLang === 'gujarati') {
+      bodyText = "💰 શું તમારો પગાર 15,000 થી વધુ છે અને બેંક એકાઉન્ટમાં જમા થાય છે?";
+      btn1 = 'હા (Yes)';
+      btn2 = 'ના (No)';
+    }
     try {
       const btnResult = await sendInteractiveButtons({
         phoneNumberId,
@@ -1127,8 +1148,8 @@ async function handleLoanPlusFlow(args: {
         to: contactRecord.phone,
         bodyText,
         buttons: [
-          { id: 'sal_gt_15k', title: 'Yes' },
-          { id: 'sal_lt_15k', title: 'No' }
+          { id: 'sal_gt_15k', title: btn1 },
+          { id: 'sal_lt_15k', title: btn2 }
         ]
       });
       saveAndSend(bodyText, btnResult.messageId, 'interactive');
@@ -1142,7 +1163,7 @@ async function handleLoanPlusFlow(args: {
   // STEP 7: "No" clicked (Salary < 15k) -> Reply ineligible
   // Reply: "Aap loan ke liye aligeable nhi hai interest dikhane ke liye thank you"
   // ------------------------------------------------------------
-  if (/^(sal_lt_15k|no|nahi)$/i.test(triggerInput) && lastBotMsgText.includes('15,000 se jyada')) {
+  if (/^(sal_lt_15k|no|nahi)$/i.test(triggerInput) && (lastBotMsgText.includes('15,000 se jyada') || lastBotMsgText.includes('15,000 થી વધુ'))) {
     const replyText = userLang === 'gujarati' ? "😊 તમે લોન માટે પાત્ર નથી, રસ દાખવવા બદલ આભાર." : "😊 Aap loan ke liye aligeable nhi hai interest dikhane ke liye thank you.";
     try {
       const txtResult = await sendTextMessage({
@@ -1163,8 +1184,8 @@ async function handleLoanPlusFlow(args: {
   // -> Ask "Apko kis parakar ki Loan Chaiye"
   // Options: "Naya ghar kharidhne hetu" / "Mere property par" / "Bina property personal Loan"
   // ------------------------------------------------------------
-  if ((/^(sal_gt_15k|yes|haa|ha)$/i.test(triggerInput) && lastBotMsgText.includes('15,000 se jyada')) ||
-      (/^(sal_cash|cash)$/i.test(triggerInput) && lastBotMsgText.includes('salary kaise milti hai'))) {
+  if ((/^(sal_gt_15k|yes|haa|ha)$/i.test(triggerInput) && (lastBotMsgText.includes('15,000 se jyada') || lastBotMsgText.includes('15,000 થી વધુ'))) ||
+      (/^(sal_cash|cash)$/i.test(triggerInput) && (lastBotMsgText.includes('salary kaise milti hai') || lastBotMsgText.includes('પગાર કેવી રીતે મળે છે')))) {
     
     let bodyText = "🏠 Apko kis parakar ki Loan Chaiye? Kripya niche diye gaye options me se chunein:";
     let btn1 = 'Naya Ghar Kharidne';
