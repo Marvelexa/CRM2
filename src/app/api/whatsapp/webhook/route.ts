@@ -959,32 +959,62 @@ async function handleLoanPlusFlow(args: {
   const lastBotMsgText = (lastBotMessages && lastBotMessages.length > 0 ? (lastBotMessages[0].content_text || '') : (conversation.last_message_text || '')).toLowerCase();
 
   let userLang = 'hinglish';
-  try {
-    const { data: customerMessages } = await supabaseAdmin()
-      .from('messages')
-      .select('content_text')
-      .eq('conversation_id', conversation.id)
-      .eq('sender_type', 'customer')
-      .order('created_at', { ascending: false })
-      .limit(5);
-    
-    if (customerMessages) {
-      for (const msg of customerMessages) {
-        const t = (msg.content_text || '').toLowerCase();
-        if (t.includes('gujarati') || t === 'lang_gujarati') { userLang = 'gujarati'; break; }
-        if (t.includes('hindi') || t === 'lang_hindi') { userLang = 'hindi'; break; }
-        if (t.includes('english') || t === 'lang_english') { userLang = 'english'; break; }
-        if (t.includes('tamil') || t === 'lang_tamil') { userLang = 'tamil'; break; }
+  // Check current message first
+  if (triggerInput.includes('gujarati') || triggerInput === 'lang_gujarati') { userLang = 'gujarati'; }
+  else if (triggerInput.includes('hindi') || triggerInput === 'lang_hindi') { userLang = 'hindi'; }
+  else if (triggerInput.includes('english') || triggerInput === 'lang_english') { userLang = 'english'; }
+  else if (triggerInput.includes('tamil') || triggerInput === 'lang_tamil') { userLang = 'tamil'; }
+  
+  // If not detected from current message, scan past customer messages
+  if (userLang === 'hinglish') {
+    try {
+      const { data: customerMessages } = await supabaseAdmin()
+        .from('messages')
+        .select('content_text')
+        .eq('conversation_id', conversation.id)
+        .eq('sender_type', 'customer')
+        .order('created_at', { ascending: false })
+        .limit(10);
+      
+      if (customerMessages) {
+        for (const msg of customerMessages) {
+          const t = (msg.content_text || '').toLowerCase();
+          if (t.includes('gujarati') || t === 'lang_gujarati') { userLang = 'gujarati'; break; }
+          if (t.includes('hindi') || t === 'lang_hindi') { userLang = 'hindi'; break; }
+          if (t.includes('english') || t === 'lang_english') { userLang = 'english'; break; }
+          if (t.includes('tamil') || t === 'lang_tamil') { userLang = 'tamil'; break; }
+        }
       }
-    }
-  } catch(e) {}
+    } catch(e) {}
+  }
+  
+  // Final fallback: if bot has already sent Gujarati text, user must have chosen Gujarati
+  if (userLang === 'hinglish') {
+    try {
+      const { data: botMsgs } = await supabaseAdmin()
+        .from('messages')
+        .select('content_text')
+        .eq('conversation_id', conversation.id)
+        .eq('sender_type', 'bot')
+        .order('created_at', { ascending: false })
+        .limit(5);
+      
+      if (botMsgs) {
+        for (const msg of botMsgs) {
+          const t = (msg.content_text || '');
+          // Check for Gujarati Unicode range (0A80–0AFF)
+          if (/[\u0A80-\u0AFF]/.test(t)) { userLang = 'gujarati'; break; }
+        }
+      }
+    } catch(e) {}
+  }
 
 
   // ------------------------------------------------------------
   // STEP 1: "Call To Advisor" button clicked OR any time they click call advisor
   // ------------------------------------------------------------
   if (/^(call_to_advisor|call to advisor|call pe baat|call pe baat karne par|btn_call_advisor)$/i.test(triggerInput)) {
-    const replyText = "😊 Interest dikhane ke liye Thank you ham jaldi aapko sampark karenge.";
+    const replyText = userLang === 'gujarati' ? "😊 રસ દાખવવા બદલ આભાર, અમે ટૂંક સમયમાં તમારો સંપર્ક કરીશું." : "😊 Interest dikhane ke liye Thank you ham jaldi aapko sampark karenge.";
     try {
       const txtResult = await sendTextMessage({
         phoneNumberId,
